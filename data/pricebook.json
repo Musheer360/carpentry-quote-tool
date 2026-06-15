@@ -1,0 +1,72 @@
+{
+  "currency": "SAR",
+  "week_days": 6,
+  "month_days": 26,
+  "categories": [
+    { "id": "boards",       "name_en": "Boards & Wood",        "name_ar": "الألواح و الأخشاب" },
+    { "id": "edge_cnc",     "name_en": "Edge / CNC",           "name_ar": "تلبيس الحروف و القص" },
+    { "id": "hardware",     "name_en": "Hardware",             "name_ar": "إكسسوارات و مستلزمات" },
+    { "id": "adhesives",    "name_en": "Adhesives & Sealant",  "name_ar": "الغراء و السليكون" },
+    { "id": "lighting",     "name_en": "Lighting",             "name_ar": "الإنارة" },
+    { "id": "paint_polish", "name_en": "Paint / Polish",       "name_ar": "الدهان و التلميع" },
+    { "id": "mirror_glass", "name_en": "Mirror / Glass",       "name_ar": "المرايا و الزجاج" },
+    { "id": "transport",    "name_en": "Transport",            "name_ar": "النقليات" },
+    { "id": "labour",       "name_en": "Labour",               "name_ar": "العمالة" }
+  ],
+  "items": [
+    { "id": "board_chip_18",    "category": "boards", "name_en": "Chipboard 2.8x2.1x18mm",        "name_ar": "خشب شيبورد 2.8×2.1×18mm",        "unit": "board", "price": 250 },
+    { "id": "board_chip_8",     "category": "boards", "name_en": "Chipboard 2.8x2.1x8mm",         "name_ar": "خشب شيبورد 2.8×2.1×8mm",         "unit": "board", "price": 180 },
+    { "id": "board_mel_28_18",  "category": "boards", "name_en": "Melamine 2.8x1.22x18mm",        "name_ar": "خشب ميلامين 2.8×1.22×18mm",      "unit": "board", "price": 210 },
+    { "id": "board_mel_244_18", "category": "boards", "name_en": "Melamine 2.44x1.22x18mm",       "name_ar": "خشب ميلامين 2.44×1.22×18mm",     "unit": "board", "price": 110 },
+    { "id": "board_mel_244_8",  "category": "boards", "name_en": "Melamine 2.44x1.22x8mm",        "name_ar": "خشب ميلامين 2.44×1.22×8mm",      "unit": "board", "price": 80 },
+    { "id": "board_mel_244_5",  "category": "boards", "name_en": "Melamine 2.44x1.22x5mm",        "name_ar": "خشب ميلامين 2.44×1.22×5mm",      "unit": "board", "price": 55 },
+    { "id": "board_mdf_veneer", "category": "boards", "name_en": "MDF + Veneer (large)",          "name_ar": "أم دي أف مع القشرة",             "unit": "board", "price": 600 },
+    { "id": "board_mdf_ven_pr", "category": "boards", "name_en": "MDF veneer-pressed",            "name_ar": "أم دي أف ملبس قشرة خشب",         "unit": "board", "price": 450 },
+    { "id": "board_mdf_366_18", "category": "boards", "name_en": "Plain MDF 3.66x1.83x18mm",      "name_ar": "خشب ام دي اف عادي 3.66×1.83×18mm","unit": "board", "price": 210 },
+    { "id": "board_mdf_366_12", "category": "boards", "name_en": "Plain MDF 3.66x1.83x12mm",      "name_ar": "خشب ام دي اف عادي 3.66×1.83×12mm","unit": "board", "price": 190 },
+    { "id": "board_mdf_366_8",  "category": "boards", "name_en": "Plain MDF 3.66x1.83x8mm",       "name_ar": "خشب ام دي اف عادي 3.66×1.83×8mm", "unit": "board", "price": 140 },
+    { "id": "board_mdf_244_18", "category": "boards", "name_en": "Plain MDF 2.44x1.22x18mm",      "name_ar": "خشب ام دي اف عادي 2.44×1.22×18mm","unit": "board", "price": 115 },
+    { "id": "board_bend_8",     "category": "boards", "name_en": "Bendable board 8mm",            "name_ar": "لوح خشب قابل تقويس 8mm",         "unit": "board", "price": 80 },
+    { "id": "board_marble_sub", "category": "boards", "name_en": "Marble-substitute board 5mm",   "name_ar": "لوح بديل رخام 5mm",              "unit": "board", "price": 120 },
+    { "id": "board_back_8",     "category": "boards", "name_en": "Back board 8mm",                "name_ar": "خشب خلفية 8 ملي",                "unit": "board", "price": 120 },
+    { "id": "board_bandply",    "category": "boards", "name_en": "Bandply / substitute",          "name_ar": "بند بلاي / بديل",                "unit": "board", "price": 120 },
+    { "id": "board_veneer_press","category": "boards","name_en": "Veneer pressed on board (large)","name_ar": "كبس قشرة على لوح 3.66×1.83×18mm","unit": "board", "price": 350 },
+
+    { "id": "edge_pvc",         "category": "edge_cnc", "name_en": "PVC edge binding",            "name_ar": "تلبيس حروف pvc",                 "unit": "meter", "price": 4 },
+    { "id": "edge_roll",        "category": "edge_cnc", "name_en": "Edge strip (roll)",           "name_ar": "شريط حروف لفة",                  "unit": "roll",  "price": 60 },
+    { "id": "cnc_cut",          "category": "edge_cnc", "name_en": "CNC wood cutting",            "name_ar": "عمل قص خشب cnc",                 "unit": "board", "price": 70 },
+    { "id": "workshop_cut",     "category": "edge_cnc", "name_en": "Workshop cut & drilling",     "name_ar": "عمل ورشة قص ألواح و تخريم",      "unit": "board", "price": 40 },
+
+    { "id": "hinge",            "category": "hardware", "name_en": "Hinge (no-elbow)",            "name_ar": "عدد مفصلات بدون ركبة",           "unit": "piece", "price": 5 },
+    { "id": "hinge_hydraulic",  "category": "hardware", "name_en": "Hydraulic cabinet hinge",     "name_ar": "مفصلات كباين هيدروليك",          "unit": "piece", "price": 6 },
+    { "id": "push_magnet",      "category": "hardware", "name_en": "Magnetic push-open",          "name_ar": "بوش أوبن مقنطس",                 "unit": "piece", "price": 6 },
+    { "id": "handle",           "category": "hardware", "name_en": "Door handle",                 "name_ar": "مقابض الأبواب",                  "unit": "piece", "price": 10 },
+    { "id": "slide_60",         "category": "hardware", "name_en": "Drawer slide set 60cm",       "name_ar": "سحاب ادراج طقم 60cm",            "unit": "set",   "price": 50 },
+    { "id": "slide_50",         "category": "hardware", "name_en": "Drawer slide set 50cm",       "name_ar": "سحاب ادراج طقم 50cm",            "unit": "set",   "price": 40 },
+    { "id": "slide_40",         "category": "hardware", "name_en": "Drawer slide set 40cm",       "name_ar": "سحاب ادراج طقم 40cm",            "unit": "set",   "price": 30 },
+    { "id": "slide_room_rail",  "category": "hardware", "name_en": "Room door sliding rail",      "name_ar": "سحاب سكة حديد للباب غرفة",       "unit": "set",   "price": 1200 },
+    { "id": "shelf_holder_cab", "category": "hardware", "name_en": "Cabinet shelf holder (pack)", "name_ar": "حوامل رفوف دواليب باكيت",        "unit": "pack",  "price": 70 },
+    { "id": "shelf_holder_wall","category": "hardware", "name_en": "Wall shelf holder",           "name_ar": "حوامل رفوف جدران",               "unit": "piece", "price": 15 },
+    { "id": "screws",           "category": "hardware", "name_en": "Screws / nails",              "name_ar": "سكارب و مسامير / برغي",          "unit": "piece", "price": 1 },
+    { "id": "wood_dowel",       "category": "hardware", "name_en": "Solid wood dowels",           "name_ar": "برايز خشب صلب",                  "unit": "piece", "price": 10 },
+
+    { "id": "glue_white",       "category": "adhesives", "name_en": "White glue",                 "name_ar": "غراء أبيض",                      "unit": "unit",  "price": 50 },
+    { "id": "glue_magic",       "category": "adhesives", "name_en": "Magic glue",                 "name_ar": "غراء سحري",                      "unit": "unit",  "price": 25 },
+    { "id": "glue_shellac",     "category": "adhesives", "name_en": "Shellac glue",               "name_ar": "غراء شلك",                       "unit": "unit",  "price": 45 },
+    { "id": "silicone",         "category": "adhesives", "name_en": "Silicone",                   "name_ar": "سليكون",                         "unit": "unit",  "price": 15 },
+
+    { "id": "led_hidden",       "category": "lighting", "name_en": "Hidden LED strip (per m)",    "name_ar": "انارة مخفية متر طولي",           "unit": "meter", "price": 10 },
+    { "id": "led_driver",       "category": "lighting", "name_en": "LED connector / driver",      "name_ar": "كونكتر / محول شريط إنارة",       "unit": "piece", "price": 7 },
+
+    { "id": "paint_wood",       "category": "paint_polish", "name_en": "Wood paint (per m2)",     "name_ar": "دهان خشب (متر مربع)",            "unit": "m2",    "price": 150 },
+    { "id": "polish_wood",      "category": "paint_polish", "name_en": "Wood polish (per m2)",    "name_ar": "تلميع خشب (متر مربع)",           "unit": "m2",    "price": 150 },
+
+    { "id": "mirror",           "category": "mirror_glass", "name_en": "Mirror (per m)",          "name_ar": "مراية متر",                      "unit": "meter", "price": 180 },
+    { "id": "glass",            "category": "mirror_glass", "name_en": "Glass (per m)",           "name_ar": "زجاج متر",                       "unit": "meter", "price": 220 },
+
+    { "id": "transport_mat",    "category": "transport", "name_en": "Material transport",         "name_ar": "نقليات مواد",                    "unit": "trip",  "price": 150 },
+    { "id": "transport_labour", "category": "transport", "name_en": "Labour transport (limousine)","name_ar": "ليموزين",                       "unit": "ride",  "price": 30 },
+
+    { "id": "labour_day",       "category": "labour", "name_en": "Carpentry work day (assemble & install)", "name_ar": "أيام عمل النجارة (تجمع و تركيب)", "unit": "day", "price": 600 }
+  ]
+}

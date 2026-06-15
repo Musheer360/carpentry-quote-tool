@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local runtime state (cloud uses Vercel Blob; these are local-mode only)
+/data/projects.json
+/data/uploads/
+/output/
+
+# Vercel / env
+.vercel/
+.env
+.env.*
+
+# Test artifacts
+_test.xlsx
+test_generate.py
+verify_formulas.py
+
+# OS
+.DS_Store
+Thumbs.db

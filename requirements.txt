@@ -1,0 +1,4 @@
+Flask==3.0.3
+openpyxl==3.1.5
+vercel_blob==0.4.2
+requests>=2.31.0
