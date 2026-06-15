@@ -51,7 +51,7 @@ def _gate():
     path = request.path or ""
     if not path.startswith("/api/"):
         return  # static frontend is harmless; the data API is what we protect
-    if path == "/api/auth":
+    if path in ("/api/auth", "/api/config"):
         return
     if request.headers.get("X-App-Password", "") != APP_PASSWORD:
         abort(401, "unauthorized")
