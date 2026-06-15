@@ -16,9 +16,14 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 import tempfile
 import time
 import uuid
+
+# Ensure sibling modules (store, generator) import whether this file is loaded
+# as a top-level script (local) or as a package module (Vercel's loader).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
