@@ -238,7 +238,7 @@ function renderOverrides(p) {
           if (v === "") delete p.price_overrides[it.id]; else p.price_overrides[it.id] = Number(v);
           refreshTotals();
         }
-      })));
+      }))));
   }
   body.appendChild(tbl);
   panel.appendChild(body);
