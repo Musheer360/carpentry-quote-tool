@@ -8,14 +8,20 @@ Runs identically in two environments:
 Persistence is delegated to store.py (Vercel Blob in the cloud, local files
 otherwise). Generated workbooks are written to a temp dir and streamed back.
 
-Security: if APP_PASSWORD is set, every /api/* call (except /api/auth) must
-send header `X-App-Password` matching it. The UI prompts once and remembers it.
+Security: cookie-session auth (PBKDF2 password hashing + HMAC-signed session
+cookie). Users live in Blob; an admin is bootstrapped from ADMIN_USERNAME /
+ADMIN_PASSWORD. Auth is disabled when SECRET_KEY is unset (plain local dev).
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import io
+import json
 import os
+import secrets
 import sys
 import tempfile
 import time
@@ -25,7 +31,7 @@ import uuid
 # as a top-level script (local) or as a package module (Vercel's loader).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, jsonify, request, send_file, send_from_directory, abort
+from flask import Flask, jsonify, request, send_file, send_from_directory, abort, make_response
 
 import store
 from generator import QuoteGenerator
@@ -37,39 +43,139 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 
 app = Flask(__name__, static_folder=None)
 
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 ALLOWED_IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
 
+# ----------------------------------------------------------------------------
+# Authentication (cookie sessions, Vercel-only, no third parties)
+#
+#   * Passwords hashed with PBKDF2-HMAC-SHA256 (per-user salt).
+#   * Session = HMAC-SHA256 signed token {u, exp} in an httpOnly cookie.
+#   * Users stored in Blob (doc "users"); an admin is bootstrapped once from
+#     ADMIN_USERNAME / ADMIN_PASSWORD env vars.
+#   * If SECRET_KEY is unset (e.g. plain local dev), auth is disabled (open).
+# ----------------------------------------------------------------------------
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+AUTH_ENABLED = bool(SECRET_KEY)
+SESSION_COOKIE = "cqt_session"
+SESSION_DAYS = 30
+PBKDF2_ROUNDS = 200_000
 
-# ----------------------------------------------------------------------------
-# auth gate
-# ----------------------------------------------------------------------------
+
+def _b64e(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _b64d(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def hash_password(password: str, salt: str | None = None):
+    salt = salt or secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ROUNDS)
+    return salt, dk.hex()
+
+
+def check_password(password: str, salt: str, expected_hex: str) -> bool:
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ROUNDS).hex()
+    return hmac.compare_digest(dk, expected_hex)
+
+
+def sign_session(username: str) -> str:
+    payload = {"u": username, "exp": int(time.time()) + SESSION_DAYS * 86400}
+    body = _b64e(json.dumps(payload, separators=(",", ":")).encode())
+    sig = _b64e(hmac.new(SECRET_KEY.encode(), body.encode(), hashlib.sha256).digest())
+    return f"{body}.{sig}"
+
+
+def verify_session(token: str):
+    try:
+        body, sig = token.split(".", 1)
+        expected = _b64e(hmac.new(SECRET_KEY.encode(), body.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(expected, sig):
+            return None
+        payload = json.loads(_b64d(body))
+        if int(payload.get("exp", 0)) < time.time():
+            return None
+        return payload.get("u")
+    except Exception:
+        return None
+
+
+def _load_users():
+    return store.load_doc("users", {"users": []})
+
+
+def _ensure_admin():
+    """Create the admin user once from env if the user store is empty."""
+    data = _load_users()
+    if data.get("users"):
+        return data
+    u = os.environ.get("ADMIN_USERNAME")
+    p = os.environ.get("ADMIN_PASSWORD")
+    if u and p:
+        salt, h = hash_password(p)
+        data["users"] = [{"username": u, "salt": salt, "hash": h,
+                          "created": time.strftime("%Y-%m-%d %H:%M")}]
+        store.save_doc("users", data)
+    return data
+
+
+def current_user():
+    if not AUTH_ENABLED:
+        return "local"
+    return verify_session(request.cookies.get(SESSION_COOKIE, "") or "")
+
+
 @app.before_request
 def _gate():
-    if not APP_PASSWORD:
-        return  # open mode (local / no password configured)
+    if not AUTH_ENABLED:
+        return
     path = request.path or ""
     if not path.startswith("/api/"):
-        return  # static frontend is harmless; the data API is what we protect
-    if path in ("/api/auth", "/api/config"):
+        return  # static assets are harmless; the data API is protected
+    if path in ("/api/login", "/api/me", "/api/config"):
         return
-    if request.headers.get("X-App-Password", "") != APP_PASSWORD:
-        abort(401, "unauthorized")
-
-
-@app.route("/api/auth", methods=["POST"])
-def auth():
-    body = request.get_json(force=True, silent=True) or {}
-    if not APP_PASSWORD:
-        return jsonify({"ok": True, "required": False})
-    ok = body.get("password", "") == APP_PASSWORD
-    return (jsonify({"ok": True, "required": True}) if ok
-            else (jsonify({"ok": False, "required": True}), 401))
+    if not current_user():
+        abort(401, "login required")
 
 
 @app.route("/api/config")
 def config():
-    return jsonify({"password_required": bool(APP_PASSWORD)})
+    return jsonify({"auth": AUTH_ENABLED})
+
+
+@app.route("/api/me")
+def me():
+    u = current_user()
+    if not u:
+        return jsonify({"user": None}), 401
+    return jsonify({"user": u})
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    if not AUTH_ENABLED:
+        return jsonify({"user": "local"})
+    body = request.get_json(force=True, silent=True) or {}
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    data = _ensure_admin()
+    user = next((x for x in data.get("users", []) if x["username"] == username), None)
+    ok = bool(user) and check_password(password, user["salt"], user["hash"])
+    time.sleep(0.3)  # mild brute-force friction
+    if not ok:
+        return jsonify({"error": "Invalid username or password"}), 401
+    resp = make_response(jsonify({"user": username}))
+    resp.set_cookie(SESSION_COOKIE, sign_session(username), max_age=SESSION_DAYS * 86400,
+                    httponly=True, secure=request.is_secure, samesite="Lax", path="/")
+    return resp
+
+
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    resp = make_response(jsonify({"ok": True}))
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
 
 
 # ----------------------------------------------------------------------------

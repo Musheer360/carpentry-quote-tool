@@ -4,21 +4,32 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Carpentry Quote Tool</title>
+  <script>
+    // set theme before paint to avoid flash
+    (function () {
+      var t = localStorage.getItem("cqt_theme");
+      if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🪚 Carpentry Quote Tool</div>
-    <nav class="tabs">
+    <div class="brand">Carpentry Quote Tool</div>
+    <nav class="tabs" id="tabs">
       <button class="tab active" data-view="projects">Projects</button>
       <button class="tab" data-view="pricebook">Price Book</button>
     </nav>
-    <div id="status" class="status"></div>
+    <div class="topbar-right">
+      <span id="status" class="status"></span>
+      <button id="themeToggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+      <span id="userbox" class="userbox"></span>
+    </div>
   </header>
 
   <main id="app"></main>
 
-  <!-- Templates are rendered by app.js -->
   <script src="/app.js"></script>
 </body>
 </html>

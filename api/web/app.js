@@ -6,7 +6,8 @@ let PB = null;            // price book {categories, items, week_days, month_day
 let CUR = null;           // currently open project (full)
 let VIEW = "projects";    // projects | pricebook | editor
 let MODE = "edit";        // editor sub-mode: edit | preview
-let PASSWORD = localStorage.getItem("cqt_pw") || "";
+let AUTH = false;         // is auth enabled on the server
+let USER = null;          // current username
 let DIRTY = false;
 let saveTimer = null;
 let pbSearch = "";
@@ -41,9 +42,8 @@ function toast(msg, type = "ok") {
 /* ------------------------------------------------------------- api -------- */
 async function api(path, opts = {}) {
   opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-  if (PASSWORD) opts.headers["X-App-Password"] = PASSWORD;
   const res = await fetch(API + path, opts);
-  if (res.status === 401) { promptPassword(); throw new Error("unauthorized"); }
+  if (res.status === 401) { USER = null; renderLogin(); throw new Error("login required"); }
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).error || msg; } catch (_) {}
@@ -53,14 +53,79 @@ async function api(path, opts = {}) {
   return ct.includes("application/json") ? res.json() : res;
 }
 
-/* ------------------------------------------------------------- auth ------- */
-async function ensureAuth() {
-  const cfg = await fetch(API + "/config").then(r => r.json()).catch(() => ({}));
-  if (cfg.password_required && !PASSWORD) promptPassword();
+/* ------------------------------------------------------------- theme ------ */
+function currentTheme() { return document.documentElement.getAttribute("data-theme") || "light"; }
+function setTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  localStorage.setItem("cqt_theme", t);
+  const btn = $("#themeToggle");
+  if (btn) btn.textContent = t === "dark" ? "☀" : "☾";
 }
-function promptPassword() {
-  const pw = window.prompt("Enter the access password for this tool:");
-  if (pw != null) { PASSWORD = pw; localStorage.setItem("cqt_pw", pw); location.reload(); }
+function initThemeToggle() {
+  const btn = $("#themeToggle");
+  if (!btn) return;
+  btn.textContent = currentTheme() === "dark" ? "☀" : "☾";
+  btn.onclick = () => setTheme(currentTheme() === "dark" ? "light" : "dark");
+}
+
+/* ------------------------------------------------------------- auth ------- */
+async function loadMe() {
+  const cfg = await fetch(API + "/config").then(r => r.json()).catch(() => ({ auth: false }));
+  AUTH = !!cfg.auth;
+  if (!AUTH) { USER = "local"; return true; }
+  try {
+    const r = await fetch(API + "/me");
+    if (!r.ok) { USER = null; return false; }
+    USER = (await r.json()).user;
+    return !!USER;
+  } catch (_) { USER = null; return false; }
+}
+
+function renderUserbox() {
+  const box = $("#userbox");
+  if (!box) return;
+  box.innerHTML = "";
+  if (AUTH && USER) {
+    box.appendChild(el("span", { class: "user-name" }, USER));
+    box.appendChild(el("button", { class: "icon-btn", title: "Sign out", onclick: logout }, "⎋"));
+  }
+}
+
+function renderLogin() {
+  document.querySelectorAll(".tab").forEach(t => t.style.display = "none");
+  renderUserbox();
+  const root = $("#app");
+  root.innerHTML = "";
+  const userI = el("input", { type: "text", placeholder: "Username", autocomplete: "username" });
+  const passI = el("input", { type: "password", placeholder: "Password", autocomplete: "current-password" });
+  const err = el("div", { class: "login-err" });
+  const submit = async () => {
+    err.textContent = "";
+    try {
+      const r = await fetch(API + "/login", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: userI.value, password: passI.value }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); err.textContent = d.error || "Login failed"; return; }
+      USER = (await r.json()).user;
+      document.querySelectorAll(".tab").forEach(t => t.style.display = "");
+      VIEW = "projects"; render();
+    } catch (e) { err.textContent = e.message; }
+  };
+  const form = el("div", { class: "login-card" },
+    el("div", { class: "login-title" }, "Sign in"),
+    el("div", { class: "login-sub" }, "Carpentry Quote Tool"),
+    el("label", {}, "Username"), userI,
+    el("label", {}, "Password"), passI,
+    err,
+    el("button", { class: "btn primary block", onclick: submit }, "Sign in"));
+  passI.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+  userI.addEventListener("keydown", e => { if (e.key === "Enter") passI.focus(); });
+  root.appendChild(el("div", { class: "login-wrap" }, form));
+  setTimeout(() => userI.focus(), 50);
+}
+
+async function logout() {
+  try { await fetch(API + "/logout", { method: "POST" }); } catch (_) {}
+  USER = null; CUR = null; renderLogin();
 }
 
 /* ----------------------------------------------------------- helpers ------ */
@@ -667,9 +732,7 @@ async function uploadItemImage(item, file) {
     toast("Uploading image…");
     const fd = new FormData();
     fd.append("file", file);
-    const headers = {};
-    if (PASSWORD) headers["X-App-Password"] = PASSWORD;
-    const res = await fetch(API + "/upload", { method: "POST", body: fd, headers });
+    const res = await fetch(API + "/upload", { method: "POST", body: fd });
     if (!res.ok) throw new Error("upload failed");
     const data = await res.json();
     item.image = data.path; touch();
@@ -702,9 +765,7 @@ async function generate() {
     await api("/projects/" + CUR.id, { method: "PUT", body: JSON.stringify(payload) });
     DIRTY = false; updateDirtyBadge();
     toast("Generating Excel…");
-    const headers = {};
-    if (PASSWORD) headers["X-App-Password"] = PASSWORD;
-    const res = await fetch(`${API}/projects/${CUR.id}/generate`, { headers });
+    const res = await fetch(`${API}/projects/${CUR.id}/generate`);
     if (!res.ok) throw new Error("generation failed");
     const blob = await res.blob();
     const cd = res.headers.get("content-disposition") || "";
@@ -722,6 +783,7 @@ async function generate() {
 async function render() {
   const root = $("#app");
   root.innerHTML = "";
+  renderUserbox();
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === (VIEW === "editor" ? "projects" : VIEW)));
   try {
     if (!PB) PB = await api("/pricebook");
@@ -740,6 +802,9 @@ document.querySelectorAll(".tab").forEach(tab =>
   }));
 
 (async function init() {
-  await ensureAuth();
+  initThemeToggle();
+  const authed = await loadMe();
+  renderUserbox();
+  if (!authed) { renderLogin(); return; }
   render();
 })();
