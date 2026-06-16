@@ -206,10 +206,10 @@ class QuoteGenerator:
             lc.font = F_LABEL
             lc.alignment = RIGHT
             lc.fill = PatternFill("solid", fgColor=C_META_BG)
-            vc = ws.cell(row=row, column=12, value=value)  # L
+            ws.merge_cells(start_row=row, start_column=10, end_row=row, end_column=12)
+            vc = ws.cell(row=row, column=10, value=value)  # J = merge anchor
             vc.font = F_CELL
             vc.alignment = RIGHT
-            ws.merge_cells(start_row=row, start_column=10, end_row=row, end_column=12)
             for col in (10, 13):
                 ws.cell(row=row, column=col).border = BORDER
             row += 1
@@ -217,16 +217,16 @@ class QuoteGenerator:
         ws.cell(row=row, column=13, value="التاريخ").font = F_LABEL
         ws.cell(row=row, column=13).alignment = RIGHT
         ws.cell(row=row, column=13).fill = PatternFill("solid", fgColor=C_META_BG)
-        dc = ws.cell(row=row, column=12, value="=TODAY()")
+        ws.merge_cells(start_row=row, start_column=10, end_row=row, end_column=12)
+        dc = ws.cell(row=row, column=10, value="=TODAY()")
         dc.number_format = "yyyy-mm-dd"
         dc.alignment = RIGHT
-        ws.merge_cells(start_row=row, start_column=10, end_row=row, end_column=12)
         row += 1
         ws.cell(row=row, column=13, value="الوقت").font = F_LABEL
         ws.cell(row=row, column=13).alignment = RIGHT
         ws.cell(row=row, column=13).fill = PatternFill("solid", fgColor=C_META_BG)
-        ws.cell(row=row, column=12, value=item.get("time") or "")
         ws.merge_cells(start_row=row, start_column=10, end_row=row, end_column=12)
+        ws.cell(row=row, column=10, value=item.get("time") or "")
         meta_bottom = row
 
         # item image on the left
@@ -276,10 +276,10 @@ class QuoteGenerator:
         # optional note
         nr = total_row + 1
         if item.get("note_ar"):
-            nc = ws.cell(row=nr, column=13, value="ملاحظة - " + item["note_ar"])
+            ws.merge_cells(start_row=nr, start_column=10, end_row=nr, end_column=13)
+            nc = ws.cell(row=nr, column=10, value="ملاحظة - " + item["note_ar"])
             nc.font = Font(name="Arial", size=10, italic=True, color="B00000")
             nc.alignment = RIGHT
-            ws.merge_cells(start_row=nr, start_column=10, end_row=nr, end_column=13)
             nr += 1
 
         # ---- breakdown by category (SUMIF on hidden O column) ----
