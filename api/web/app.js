@@ -87,7 +87,6 @@ function renderUserbox() {
   if (!box) return;
   box.innerHTML = "";
   if (AUTH && USER) {
-    box.appendChild(el("span", { class: "user-name" }, USER));
     box.appendChild(el("button", { class: "btn ghost sm", title: "Sign out", onclick: logout }, "Sign out"));
   }
 }
