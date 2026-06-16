@@ -55,8 +55,10 @@ vercel link
 # 2) Create a Blob store (adds BLOB_READ_WRITE_TOKEN to the project)
 vercel blob create-store carpentry-quote-blob
 
-# 3) (Recommended) Protect the app with a shared password
-vercel env add APP_PASSWORD production    # type a password when prompted
+# 3) Sign-in: set a session secret + the admin account
+vercel env add SECRET_KEY production       # any long random string
+vercel env add ADMIN_USERNAME production   # your login username
+vercel env add ADMIN_PASSWORD production   # your login password
 
 # 4) Deploy to production
 vercel --prod
@@ -79,9 +81,12 @@ python api/index.py
 
 ## Security note
 
-A public Vercel URL is reachable by anyone with the link. Set `APP_PASSWORD`
-(step 3 above) so client pricing and projects are gated behind a shared
-password. The UI prompts for it once and remembers it in the browser.
+The app is gated by a username/password **login**. Passwords are hashed
+(PBKDF2-HMAC-SHA256) and the session is an HMAC-signed, httpOnly cookie keyed by
+`SECRET_KEY`. The first admin is created from `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+on first sign-in; the account then lives (hashed) in Blob. To change the
+password later, delete the `users` blob and update the env, or add a
+change-password flow. If `SECRET_KEY` is unset (plain local dev), auth is off.
 
 ---
 
