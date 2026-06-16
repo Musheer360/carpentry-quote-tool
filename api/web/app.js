@@ -55,16 +55,17 @@ async function api(path, opts = {}) {
 
 /* ------------------------------------------------------------- theme ------ */
 function currentTheme() { return document.documentElement.getAttribute("data-theme") || "light"; }
+function themeLabel() { return currentTheme() === "dark" ? "Light mode" : "Dark mode"; }
 function setTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
   localStorage.setItem("cqt_theme", t);
   const btn = $("#themeToggle");
-  if (btn) btn.textContent = t === "dark" ? "☀" : "☾";
+  if (btn) btn.textContent = themeLabel();
 }
 function initThemeToggle() {
   const btn = $("#themeToggle");
   if (!btn) return;
-  btn.textContent = currentTheme() === "dark" ? "☀" : "☾";
+  btn.textContent = themeLabel();
   btn.onclick = () => setTheme(currentTheme() === "dark" ? "light" : "dark");
 }
 
@@ -87,7 +88,7 @@ function renderUserbox() {
   box.innerHTML = "";
   if (AUTH && USER) {
     box.appendChild(el("span", { class: "user-name" }, USER));
-    box.appendChild(el("button", { class: "icon-btn", title: "Sign out", onclick: logout }, "⎋"));
+    box.appendChild(el("button", { class: "btn ghost sm", title: "Sign out", onclick: logout }, "Sign out"));
   }
 }
 
@@ -200,7 +201,7 @@ function touch() {
 }
 function updateDirtyBadge() {
   const b = $("#dirtyBadge");
-  if (b) { b.textContent = DIRTY ? "● Unsaved" : "✓ Saved"; b.className = "dirty-badge" + (DIRTY ? " on" : ""); }
+  if (b) { b.textContent = DIRTY ? "Unsaved changes" : "All changes saved"; b.className = "dirty-badge" + (DIRTY ? " on" : ""); }
 }
 async function autosave() {
   if (!CUR || !DIRTY) return;
@@ -236,7 +237,7 @@ function renderPriceBook(root) {
 
   // Price book
   root.appendChild(el("p", { class: "muted" }, "Base prices in SAR. These persist across sessions and feed every quote."));
-  const searchInput = el("input", { class: "search", placeholder: "🔎 Search materials (English / Arabic / category)…", value: pbSearch, oninput: e => { pbSearch = e.target.value; rerenderPB(); } });
+  const searchInput = el("input", { class: "search", placeholder: "Search materials (English / Arabic / category)…", value: pbSearch, oninput: e => { pbSearch = e.target.value; rerenderPB(); } });
   const tools = el("div", { class: "toolbar" },
     el("button", { class: "btn primary", onclick: savePriceBook }, "Save Price Book & Settings"),
     searchInput,
@@ -327,14 +328,14 @@ function renderEditor(root) {
       el("a", { class: "crumb", onclick: () => { if (guardLeave()) { VIEW = "projects"; CUR = null; render(); } } }, "Projects"),
       el("span", { class: "crumb-sep" }, "›"),
       el("span", { class: "crumb cur" }, p.unit_name || p.client_name_en || "Project")),
-    el("span", { id: "dirtyBadge", class: "dirty-badge" }, "✓ Saved"),
+    el("span", { id: "dirtyBadge", class: "dirty-badge" }, "All changes saved"),
     el("span", { class: "spacer" }),
     el("div", { class: "seg" },
-      el("button", { class: "seg-btn" + (MODE === "edit" ? " on" : ""), onclick: () => { MODE = "edit"; render(); } }, "✎ Edit"),
-      el("button", { class: "seg-btn" + (MODE === "preview" ? " on" : ""), onclick: () => { MODE = "preview"; render(); } }, "👁 Preview")),
+      el("button", { class: "seg-btn" + (MODE === "edit" ? " on" : ""), onclick: () => { MODE = "edit"; render(); } }, "Edit"),
+      el("button", { class: "seg-btn" + (MODE === "preview" ? " on" : ""), onclick: () => { MODE = "preview"; render(); } }, "Preview")),
     el("button", { class: "btn ghost", onclick: () => { if (confirm("Delete this project?")) deleteProject(); } }, "Delete"),
     el("button", { class: "btn primary", onclick: saveProject }, "Save"),
-    el("button", { class: "btn accent", onclick: generate }, "⤓ Generate Excel"));
+    el("button", { class: "btn accent", onclick: generate }, "Generate Excel"));
   root.appendChild(bar);
   updateDirtyBadge();
 
@@ -391,10 +392,10 @@ function renderDashboard(p) {
 function renderChecklist(issues) {
   const panel = el("div", { class: "panel checklist " + (issues.length ? "has-issues" : "ok") });
   if (!issues.length) {
-    panel.appendChild(el("div", { class: "chk-ok" }, "✓ Everything looks good — ready to generate."));
+    panel.appendChild(el("div", { class: "chk-ok" }, "Everything looks good — ready to generate."));
     return panel;
   }
-  panel.appendChild(el("h2", {}, `⚠ ${issues.length} thing(s) to review`));
+  panel.appendChild(el("h2", {}, `${issues.length} thing(s) to review`));
   const ul = el("ul", { class: "chk-list" });
   issues.forEach(i => ul.appendChild(el("li", {}, i)));
   panel.appendChild(ul);
@@ -463,16 +464,16 @@ function renderItem(item, idx) {
     el("span", { class: "chip" }, `${(item.lines || []).length} mat.`),
     el("span", { class: "chip" }, `${round3(num(item.labour_days))} d`));
   const head = el("div", { class: "item-head", onclick: () => { item._open = !item._open; render(); } },
-    el("span", { class: "chev" }, "▶"),
+    el("span", { class: "chev" }),
     el("span", { class: "name" }, (item.name_en || "Item")),
     el("span", { class: "arabic muted" }, item.name_ar || ""),
     chips,
     el("span", { class: "tot" }, money(itemTotal(item))),
     el("span", { class: "item-actions" },
-      el("button", { class: "btn ghost xs", title: "Move up", onclick: stop(() => moveItem(idx, -1)) }, "↑"),
-      el("button", { class: "btn ghost xs", title: "Move down", onclick: stop(() => moveItem(idx, 1)) }, "↓"),
-      el("button", { class: "btn ghost xs", title: "Duplicate", onclick: stop(() => duplicateItem(idx)) }, "⧉"),
-      el("button", { class: "btn danger xs", title: "Delete", onclick: stop(() => { if (confirm("Delete this item?")) { CUR.items.splice(idx, 1); touch(); render(); } }) }, "✕")));
+      el("button", { class: "btn ghost xs", title: "Move up", onclick: stop(() => moveItem(idx, -1)) }, "Up"),
+      el("button", { class: "btn ghost xs", title: "Move down", onclick: stop(() => moveItem(idx, 1)) }, "Down"),
+      el("button", { class: "btn ghost xs", title: "Duplicate", onclick: stop(() => duplicateItem(idx)) }, "Duplicate"),
+      el("button", { class: "btn danger xs", title: "Delete", onclick: stop(() => { if (confirm("Delete this item?")) { CUR.items.splice(idx, 1); touch(); render(); } }) }, "Delete")));
   block.appendChild(head);
 
   const body = el("div", { class: "item-body" });
@@ -508,7 +509,7 @@ function renderItem(item, idx) {
 
   body.appendChild(el("h3", {}, "Materials & services"));
   item.lines = item.lines || [];
-  if (!item.lines.length) body.appendChild(el("p", { class: "hint warn" }, "⚠ No materials yet — add at least one line."));
+  if (!item.lines.length) body.appendChild(el("p", { class: "hint warn" }, "No materials yet — add at least one line."));
   item.lines.forEach((line, li) => body.appendChild(renderLine(item, line, li)));
   body.appendChild(el("button", { class: "btn ghost sm", onclick: () => { item.lines.push({ kind: "simple", item_id: "", qty: 1 }); touch(); render(); } }, "+ Add material line"));
 
@@ -600,8 +601,8 @@ function renderLine(item, line, li) {
 
   wrap.appendChild(el("div", { class: "line-end" },
     el("span", { class: "linetotal" }, money(lineTotal(line))),
-    el("button", { class: "btn ghost xs", title: "Duplicate line", onclick: () => { item.lines.splice(li + 1, 0, JSON.parse(JSON.stringify(line))); touch(); render(); } }, "⧉"),
-    el("button", { class: "btn danger xs", title: "Remove line", onclick: () => { item.lines.splice(li, 1); touch(); render(); } }, "✕")));
+    el("button", { class: "btn ghost xs", title: "Duplicate line", onclick: () => { item.lines.splice(li + 1, 0, JSON.parse(JSON.stringify(line))); touch(); render(); } }, "Copy"),
+    el("button", { class: "btn danger xs", title: "Remove line", onclick: () => { item.lines.splice(li, 1); touch(); render(); } }, "Remove")));
 
   if (line.kind === "mdf") {
     const opts = el("div", { class: "sub-opts" });

@@ -45,10 +45,15 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Inter", "IBM Plex Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg); color: var(--ink-2); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 a { color: inherit; }
+.arabic, [dir="rtl"], .pv-co, .pv-sub, .pv-meta, .pv-item-head, .pv-note,
+.pv-summary h3, .pv-timeline {
+  font-family: "IBM Plex Sans Arabic", "Inter", "Segoe UI", Tahoma, sans-serif;
+}
 
 /* topbar */
 .topbar {
@@ -64,11 +69,12 @@ a { color: inherit; }
 }
 .tab:hover { color: var(--ink); }
 .tab.active { color: var(--ink); border-bottom-color: var(--ink); font-weight: 500; }
-.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .status { font-size: 13px; color: var(--muted); min-height: 16px; }
 .status.err { color: var(--danger); }
-.userbox { display: flex; align-items: center; gap: 8px; }
-.user-name { font-size: 13px; color: var(--muted); }
+.userbox { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-right: 1px solid var(--line); }
+.userbox:empty { display: none; }
+.user-name { font-size: 13px; color: var(--ink-2); font-weight: 500; }
 .icon-btn {
   background: var(--bg); color: var(--ink); border: 1px solid var(--line);
   width: 32px; height: 32px; cursor: pointer; font-size: 14px; display: inline-flex;
@@ -133,7 +139,8 @@ td.num, th.num { text-align: right; }
 .item-head .tot { margin-left: auto; color: var(--ink); font-weight: 600; }
 .item-body { padding: 16px; display: none; border-top: 1px solid var(--line); }
 .item-block.open .item-body { display: block; }
-.chev { transition: transform .15s; color: var(--muted); }
+.chev { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--muted); transition: transform .15s; flex: 0 0 auto; }
 .item-block.open .chev { transform: rotate(90deg); }
 
 .line { display: grid; grid-template-columns: 130px 2fr 90px auto; gap: 10px; align-items: end; margin-bottom: 10px; }
