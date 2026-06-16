@@ -24,3 +24,4 @@ verify_formulas.py
 Thumbs.db
 .vercel
 .env*
+/data/users.json
