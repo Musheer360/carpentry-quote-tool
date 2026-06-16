@@ -2,7 +2,7 @@
 "use strict";
 
 const API = "/api";
-let PB = null;            // price book {categories, items}
+let PB = null;            // price book {categories, items, week_days, month_days}
 let CUR = null;           // currently open project (full)
 let VIEW = "projects";
 let PASSWORD = localStorage.getItem("cqt_pw") || "";
@@ -17,11 +17,12 @@ const el = (tag, attrs = {}, ...kids) => {
     else if (v !== null && v !== undefined) n.setAttribute(k, v);
   }
   for (const kid of kids.flat()) {
-    if (kid == null) continue;
-    n.appendChild(typeof kid === "string" ? document.createTextNode(kid) : kid);
+    if (kid == null || kid === false) continue;
+    n.appendChild(typeof kid === "string" || typeof kid === "number" ? document.createTextNode(String(kid)) : kid);
   }
   return n;
 };
+const stop = (fn) => (e) => { e.stopPropagation(); fn(e); };
 
 function setStatus(msg, isErr = false) {
   const s = $("#status");
@@ -55,39 +56,66 @@ function promptPassword() {
   if (pw != null) { PASSWORD = pw; localStorage.setItem("cqt_pw", pw); location.reload(); }
 }
 
-/* --------------------------------------------------------------- helpers -- */
+/* -------------------------------------------------------------- helpers --- */
 function money(n) { return (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " SAR"; }
+function num(n) { return Number(n) || 0; }
 function itemById(id) { return (PB?.items || []).find(i => i.id === id); }
-function catName(id) { const c = (PB?.categories || []).find(c => c.id === id); return c ? c.name_en : id; }
+function catById(id) { return (PB?.categories || []).find(c => c.id === id); }
+const weekDays = () => PB?.week_days || 6;
+const monthDays = () => PB?.month_days || 26;
 
-/* compute a live preview of a project item's total (mirrors generator logic) */
 function priceOf(id) {
   const ov = CUR?.price_overrides || {};
-  if (ov[id] !== undefined && ov[id] !== "" && ov[id] !== null) return Number(ov[id]) || 0;
+  if (ov[id] !== undefined && ov[id] !== "" && ov[id] !== null) return num(ov[id]);
   const it = itemById(id);
-  return it ? Number(it.price) || 0 : 0;
+  return it ? num(it.price) : 0;
 }
-function lineTotal(line) {
-  let t = 0;
-  const q = Number(line.qty) || 0;
-  if (line.item_id) t += q * priceOf(line.item_id);
-  if (line.kind === "mdf" && (line.finish === "polish" || line.finish === "paint")) {
-    const area = (Number(line.length) || 0) * (Number(line.width) || 0) * (Number(line.finish_count) || q || 1);
-    t += area * priceOf(line.finish === "polish" ? "polish_wood" : "paint_wood");
+
+/* compute each component of a line; returns array of {label, qty, price, amount, cat} */
+function lineComponents(line) {
+  const out = [];
+  const q = num(line.qty);
+  if (line.item_id) {
+    const it = itemById(line.item_id);
+    out.push({ label: it ? it.name_en : line.item_id, qty: q, price: priceOf(line.item_id), amount: q * priceOf(line.item_id), cat: it?.category });
   }
-  if (line.kind === "laminated" && line.process === "cnc")
-    t += (Number(line.process_qty) || q || 1) * priceOf("cnc_cut");
-  if (line.kind === "laminated" && line.process === "pvc_edge")
-    t += (Number(line.process_qty) || 0) * priceOf("edge_pvc");
-  return t;
+  if (line.kind === "mdf" && (line.finish === "polish" || line.finish === "paint")) {
+    const area = num(line.length) * num(line.width) * (num(line.finish_count) || q || 1);
+    const pid = line.finish === "polish" ? "polish_wood" : "paint_wood";
+    out.push({ label: (line.finish === "polish" ? "Polish" : "Paint") + ` (${num(line.length)}×${num(line.width)}×${num(line.finish_count) || q || 1} m²)`, qty: area, price: priceOf(pid), amount: area * priceOf(pid), cat: "paint_polish" });
+  }
+  if (line.kind === "laminated" && line.process === "cnc") {
+    const pq = num(line.process_qty) || q || 1;
+    out.push({ label: "CNC cutting", qty: pq, price: priceOf("cnc_cut"), amount: pq * priceOf("cnc_cut"), cat: "edge_cnc" });
+  }
+  if (line.kind === "laminated" && line.process === "pvc_edge") {
+    const pq = num(line.process_qty);
+    out.push({ label: "PVC edge binding", qty: pq, price: priceOf("edge_pvc"), amount: pq * priceOf("edge_pvc"), cat: "edge_cnc" });
+  }
+  return out;
 }
-function itemTotal(item) {
-  let t = (item.lines || []).reduce((s, l) => s + lineTotal(l), 0);
-  const days = Number(item.labour_days) || 0;
-  if (days > 0) t += days * priceOf("labour_day") + days * 2 * priceOf("transport_labour");
-  const trips = Number(item.material_transport_trips) || 0;
-  if (trips > 0) t += trips * priceOf("transport_mat");
-  return t;
+function lineTotal(line) { return lineComponents(line).reduce((s, c) => s + c.amount, 0); }
+
+function itemComponents(item) {
+  const comps = [];
+  (item.lines || []).forEach(l => comps.push(...lineComponents(l)));
+  const days = num(item.labour_days);
+  if (days > 0) {
+    comps.push({ label: "Carpentry work days", qty: days, price: priceOf("labour_day"), amount: days * priceOf("labour_day"), cat: "labour" });
+    comps.push({ label: "Labour transport (days × 2)", qty: days * 2, price: priceOf("transport_labour"), amount: days * 2 * priceOf("transport_labour"), cat: "transport" });
+  }
+  const trips = num(item.material_transport_trips);
+  if (trips > 0) comps.push({ label: "Material transport", qty: trips, price: priceOf("transport_mat"), amount: trips * priceOf("transport_mat"), cat: "transport" });
+  return comps;
+}
+function itemTotal(item) { return itemComponents(item).reduce((s, c) => s + c.amount, 0); }
+function projectTotal(p) { return (p.items || []).reduce((s, it) => s + itemTotal(it), 0); }
+function projectDays(p) { return (p.items || []).reduce((s, it) => s + num(it.labour_days), 0); }
+
+function categoryTotals(item) {
+  const map = {};
+  itemComponents(item).forEach(c => { if (c.cat) map[c.cat] = (map[c.cat] || 0) + c.amount; });
+  return map;
 }
 
 /* ============================================================ PRICE BOOK == */
@@ -95,31 +123,24 @@ function renderPriceBook(root) {
   root.appendChild(el("h1", {}, "Price Book"));
   root.appendChild(el("p", { class: "muted" },
     "Base prices in SAR. These persist across sessions and feed every quote. Edit a price and click Save."));
-
   const panel = el("div", { class: "panel" });
-  const toolbar = el("div", { class: "toolbar" },
+  panel.appendChild(el("div", { class: "toolbar" },
     el("button", { class: "btn primary", onclick: savePriceBook }, "Save Price Book"),
     el("span", { class: "spacer" }),
-    el("button", { class: "btn ghost sm", onclick: () => addPriceItem() }, "+ Add material/service"));
-  panel.appendChild(toolbar);
-
+    el("button", { class: "btn ghost sm", onclick: () => addPriceItem() }, "+ Add material/service")));
   for (const cat of PB.categories) {
     const items = PB.items.filter(i => i.category === cat.id);
     panel.appendChild(el("div", { class: "cat-head" },
       el("h2", {}, cat.name_en), el("span", { class: "ar arabic" }, cat.name_ar)));
     const tbl = el("table");
     tbl.appendChild(el("tr", {},
-      el("th", {}, "Material / Service (EN)"),
-      el("th", { class: "arabic" }, "Arabic"),
-      el("th", {}, "Unit"),
-      el("th", { class: "num" }, "Price (SAR)"),
-      el("th", {}, "")));
+      el("th", {}, "Material / Service (EN)"), el("th", { class: "arabic" }, "Arabic"),
+      el("th", {}, "Unit"), el("th", { class: "num" }, "Price (SAR)"), el("th", {}, "")));
     for (const it of items) tbl.appendChild(priceRow(it));
     panel.appendChild(tbl);
   }
   root.appendChild(panel);
 }
-
 function priceRow(it) {
   return el("tr", {},
     el("td", {}, el("input", { value: it.name_en || "", oninput: e => it.name_en = e.target.value, style: "width:100%" })),
@@ -128,16 +149,14 @@ function priceRow(it) {
     el("td", { class: "num" }, el("input", { class: "price-input", type: "number", step: "0.01", value: it.price, oninput: e => it.price = e.target.value })),
     el("td", {}, el("button", { class: "btn danger sm", onclick: () => { PB.items = PB.items.filter(x => x !== it); render(); } }, "Remove")));
 }
-
 function addPriceItem() {
   const cat = PB.categories[0]?.id || "boards";
   PB.items.push({ id: "custom_" + Math.random().toString(36).slice(2, 8), category: cat, name_en: "New item", name_ar: "", unit: "piece", price: 0 });
   render();
 }
-
 async function savePriceBook() {
   try {
-    for (const it of PB.items) it.price = Number(it.price) || 0;
+    for (const it of PB.items) it.price = num(it.price);
     await api("/pricebook", { method: "PUT", body: JSON.stringify(PB) });
     setStatus("Price book saved.");
   } catch (e) { setStatus("Save failed: " + e.message, true); }
@@ -146,10 +165,8 @@ async function savePriceBook() {
 /* ============================================================== PROJECTS == */
 async function renderProjects(root) {
   root.appendChild(el("h1", {}, "Projects"));
-  const bar = el("div", { class: "toolbar" },
-    el("button", { class: "btn primary", onclick: newProject }, "+ New Client Project"));
-  root.appendChild(bar);
-
+  root.appendChild(el("div", { class: "toolbar" },
+    el("button", { class: "btn primary", onclick: newProject }, "+ New Client Project")));
   const list = await api("/projects");
   if (!list.length) { root.appendChild(el("div", { class: "empty" }, "No projects yet. Create your first client project.")); return; }
   const grid = el("div", { class: "cardlist" });
@@ -162,7 +179,6 @@ async function renderProjects(root) {
   }
   root.appendChild(grid);
 }
-
 async function newProject() {
   const p = await api("/projects", { method: "POST", body: JSON.stringify({ unit_name: "New Project" }) });
   openProject(p.id);
@@ -185,44 +201,53 @@ function renderEditor(root) {
     el("button", { class: "btn primary", onclick: saveProject }, "Save"),
     el("button", { class: "btn accent", onclick: generate }, "⤓ Generate Excel")));
 
+  // dashboard
+  root.appendChild(renderDashboard(p));
+
   // metadata
   const meta = el("div", { class: "panel" });
   meta.appendChild(el("h2", {}, "Project Details"));
-  const f = (label, key, ar = false, ph = "") => el("div", { class: "field" },
+  const f = (label, key, ar = false) => el("div", { class: "field" },
     el("label", {}, label),
-    el("input", { class: ar ? "arabic" : "", value: p[key] || "", placeholder: ph, oninput: e => p[key] = e.target.value }));
-  meta.appendChild(el("div", { class: "row" },
-    f("Company name (EN)", "company_name_en"), f("Company name (AR)", "company_name_ar", true)));
-  meta.appendChild(el("div", { class: "row" },
-    f("Client name (EN)", "client_name_en"), f("Client name (AR)", "client_name_ar", true)));
-  meta.appendChild(el("div", { class: "row" },
-    f("Unit / Project name", "unit_name"), f("Location", "location")));
+    el("input", { class: ar ? "arabic" : "", value: p[key] || "", oninput: e => p[key] = e.target.value }));
+  meta.appendChild(el("div", { class: "row" }, f("Company name (EN)", "company_name_en"), f("Company name (AR)", "company_name_ar", true)));
+  meta.appendChild(el("div", { class: "row" }, f("Client name (EN)", "client_name_en"), f("Client name (AR)", "client_name_ar", true)));
+  meta.appendChild(el("div", { class: "row" }, f("Unit / Project name", "unit_name"), f("Location", "location")));
   root.appendChild(meta);
 
-  // price overrides (optional)
   root.appendChild(renderOverrides(p));
 
-  // items
-  const head = el("div", { class: "toolbar" },
+  // items toolbar
+  root.appendChild(el("div", { class: "toolbar" },
     el("h2", {}, "Items (one sheet each)"),
     el("span", { class: "spacer" }),
-    el("span", { class: "pill" }, "Project total: " + money(p.items.reduce((s, it) => s + itemTotal(it), 0))),
-    el("button", { class: "btn ghost sm", onclick: addItem }, "+ Add item"));
-  root.appendChild(head);
+    el("button", { class: "btn ghost sm", onclick: () => { p.items.forEach(i => i._open = false); render(); } }, "Collapse all"),
+    el("button", { class: "btn ghost sm", onclick: () => { p.items.forEach(i => i._open = true); render(); } }, "Expand all"),
+    el("button", { class: "btn ghost sm", onclick: addItem }, "+ Add item")));
 
   if (!p.items.length) root.appendChild(el("div", { class: "empty" }, "No items yet. Add the first piece (TV wall, wardrobe, ...)."));
   p.items.forEach((item, idx) => root.appendChild(renderItem(item, idx)));
 }
 
+function renderDashboard(p) {
+  const total = projectTotal(p), days = projectDays(p);
+  const stat = (val, lbl) => el("div", { class: "stat" }, el("div", { class: "stat-val" }, val), el("div", { class: "stat-lbl" }, lbl));
+  return el("div", { class: "dashboard" },
+    stat(money(total), "Project total"),
+    stat(String(p.items.length), "Items / sheets"),
+    stat(String(days), "Work days"),
+    stat((days / weekDays()).toFixed(1), `Weeks (${weekDays()}d)`),
+    stat((days / monthDays()).toFixed(1), `Months (${monthDays()}d)`));
+}
+
 function renderOverrides(p) {
   const panel = el("div", { class: "panel" });
-  const open = !!Object.keys(p.price_overrides || {}).length;
-  const body = el("div", { style: open ? "" : "display:none" });
-  const toggle = el("button", { class: "btn ghost sm", onclick: () => { body.style.display = body.style.display === "none" ? "" : "none"; } },
-    "Toggle");
+  const count = Object.keys(p.price_overrides || {}).length;
+  const body = el("div", { style: count ? "" : "display:none" });
   panel.appendChild(el("div", { class: "toolbar" },
-    el("h2", {}, "Client-specific price overrides"),
-    el("span", { class: "spacer" }), toggle));
+    el("h2", {}, "Client-specific price overrides" + (count ? ` (${count})` : "")),
+    el("span", { class: "spacer" }),
+    el("button", { class: "btn ghost sm", onclick: () => { body.style.display = body.style.display === "none" ? "" : "none"; } }, "Show / hide")));
   panel.appendChild(el("p", { class: "hint" }, "Leave blank to use the base Price Book value. Set a number to override it for THIS client only."));
   const tbl = el("table");
   tbl.appendChild(el("tr", {}, el("th", {}, "Material/Service"), el("th", {}, "Base"), el("th", {}, "Override (SAR)")));
@@ -235,7 +260,7 @@ function renderOverrides(p) {
         value: (p.price_overrides[it.id] ?? ""),
         oninput: e => {
           const v = e.target.value;
-          if (v === "") delete p.price_overrides[it.id]; else p.price_overrides[it.id] = Number(v);
+          if (v === "") delete p.price_overrides[it.id]; else p.price_overrides[it.id] = num(v);
           refreshTotals();
         }
       }))));
@@ -247,7 +272,20 @@ function renderOverrides(p) {
 
 function addItem() {
   CUR.items.push({ name_en: "New item", name_ar: "", place_ar: "", time: "", note_ar: "",
-    image: "", labour_days: 0, material_transport_trips: 0, lines: [] });
+    image: "", labour_days: 0, material_transport_trips: 0, lines: [], _open: true });
+  render();
+}
+function duplicateItem(idx) {
+  const copy = JSON.parse(JSON.stringify(CUR.items[idx]));
+  copy.name_en = (copy.name_en || "Item") + " (copy)";
+  copy._open = false;
+  CUR.items.splice(idx + 1, 0, copy);
+  render();
+}
+function moveItem(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= CUR.items.length) return;
+  [CUR.items[idx], CUR.items[j]] = [CUR.items[j], CUR.items[idx]];
   render();
 }
 
@@ -255,14 +293,17 @@ function renderItem(item, idx) {
   const block = el("div", { class: "item-block" + (item._open ? " open" : "") });
   const head = el("div", { class: "item-head", onclick: () => { item._open = !item._open; render(); } },
     el("span", { class: "chev" }, "▶"),
-    el("span", { class: "name" }, (item.name_en || "Item") + (item.name_ar ? "  " : "")),
+    el("span", { class: "name" }, (item.name_en || "Item")),
     el("span", { class: "arabic muted" }, item.name_ar || ""),
-    el("span", { class: "tot" }, money(itemTotal(item))));
+    el("span", { class: "tot" }, money(itemTotal(item))),
+    el("span", { class: "item-actions" },
+      el("button", { class: "btn ghost xs", title: "Move up", onclick: stop(() => moveItem(idx, -1)) }, "↑"),
+      el("button", { class: "btn ghost xs", title: "Move down", onclick: stop(() => moveItem(idx, 1)) }, "↓"),
+      el("button", { class: "btn ghost xs", title: "Duplicate", onclick: stop(() => duplicateItem(idx)) }, "⧉"),
+      el("button", { class: "btn danger xs", title: "Delete", onclick: stop(() => { if (confirm("Delete this item?")) { CUR.items.splice(idx, 1); render(); } }) }, "✕")));
   block.appendChild(head);
 
   const body = el("div", { class: "item-body" });
-
-  // item meta
   const fi = (label, key, ar = false) => el("div", { class: "field" },
     el("label", {}, label), el("input", { class: ar ? "arabic" : "", value: item[key] || "", oninput: e => { item[key] = e.target.value; } }));
   body.appendChild(el("div", { class: "row" }, fi("Item name (EN)", "name_en"), fi("Item name (AR)", "name_ar", true)));
@@ -279,13 +320,11 @@ function renderItem(item, idx) {
     const src = item.image.startsWith("http") ? item.image : "/" + item.image;
     imgRow.appendChild(el("img", { class: "thumb", src }));
   }
-  const fileIn = el("input", { type: "file", accept: "image/*", onchange: e => uploadItemImage(item, e.target.files[0]) });
-  imgRow.appendChild(fileIn);
+  imgRow.appendChild(el("input", { type: "file", accept: "image/*", onchange: e => uploadItemImage(item, e.target.files[0]) }));
   if (item.image) imgRow.appendChild(el("button", { class: "btn danger sm", onclick: () => { item.image = ""; render(); } }, "Remove photo"));
   imgField.appendChild(imgRow);
   body.appendChild(imgField);
 
-  // labour + transport
   body.appendChild(el("div", { class: "row" },
     el("div", { class: "field" }, el("label", {}, "Labour work days"),
       el("input", { type: "number", step: "0.5", min: "0", value: item.labour_days || 0, oninput: e => { item.labour_days = e.target.value; refreshTotals(); } })),
@@ -293,14 +332,50 @@ function renderItem(item, idx) {
       el("input", { type: "number", step: "1", min: "0", value: item.material_transport_trips || 0, oninput: e => { item.material_transport_trips = e.target.value; refreshTotals(); } }))));
   body.appendChild(el("p", { class: "hint" }, "Labour transport (limousine) is auto-calculated as work days × 2."));
 
-  // material lines
   body.appendChild(el("h3", {}, "Materials & services"));
   item.lines = item.lines || [];
+  if (!item.lines.length) body.appendChild(el("p", { class: "hint warn" }, "⚠ No materials yet — this item's sheet will be empty."));
   item.lines.forEach((line, li) => body.appendChild(renderLine(item, line, li)));
   body.appendChild(el("button", { class: "btn ghost sm", onclick: () => { item.lines.push({ kind: "simple", item_id: "", qty: 1 }); render(); } }, "+ Add material line"));
 
+  // live calculation breakdown
+  body.appendChild(renderItemBreakdown(item));
+
   block.appendChild(body);
   return block;
+}
+
+function renderItemBreakdown(item) {
+  const wrap = el("div", { class: "breakdown" });
+  wrap.appendChild(el("h3", {}, "Calculation breakdown"));
+  const comps = itemComponents(item);
+  if (!comps.length) { wrap.appendChild(el("p", { class: "hint" }, "Add materials to see the breakdown.")); return wrap; }
+  const tbl = el("table", { class: "calc-table" });
+  tbl.appendChild(el("tr", {}, el("th", {}, "Component"), el("th", { class: "num" }, "Qty"), el("th", { class: "num" }, "Unit price"), el("th", { class: "num" }, "Amount")));
+  for (const c of comps) {
+    tbl.appendChild(el("tr", {},
+      el("td", {}, c.label),
+      el("td", { class: "num" }, String(+c.qty.toFixed(3))),
+      el("td", { class: "num" }, money(c.price)),
+      el("td", { class: "num" }, el("strong", {}, money(c.amount)))));
+  }
+  tbl.appendChild(el("tr", { class: "calc-total" },
+    el("td", { colspan: "3" }, "Item total"), el("td", { class: "num" }, money(itemTotal(item)))));
+  wrap.appendChild(tbl);
+
+  // category breakdown
+  const cats = categoryTotals(item);
+  const total = itemTotal(item) || 1;
+  const catKeys = Object.keys(cats);
+  if (catKeys.length) {
+    wrap.appendChild(el("div", { class: "cat-bars" }, ...catKeys.map(k => {
+      const pct = (cats[k] / total) * 100;
+      return el("div", { class: "cat-bar" },
+        el("div", { class: "cat-bar-label" }, (catById(k)?.name_en || k), el("span", { class: "muted" }, "  " + money(cats[k]) + " · " + pct.toFixed(1) + "%")),
+        el("div", { class: "cat-bar-track" }, el("div", { class: "cat-bar-fill", style: `width:${pct}%` })));
+    })));
+  }
+  return wrap;
 }
 
 function materialSelect(line, onchange) {
@@ -317,33 +392,32 @@ function materialSelect(line, onchange) {
 
 function renderLine(item, line, li) {
   const wrap = el("div", { class: "line" });
-  // kind
   const kindSel = el("select", { onchange: e => { line.kind = e.target.value; render(); } });
   for (const k of [["simple", "Simple"], ["mdf", "MDF/Veneer"], ["laminated", "Laminated"]])
     kindSel.appendChild(el("option", { value: k[0], selected: line.kind === k[0] ? "selected" : null }, k[1]));
   wrap.appendChild(el("div", { class: "field" }, el("label", {}, "Type"), kindSel));
 
-  // material
-  wrap.appendChild(el("div", { class: "field" }, el("label", {}, "Material / service"), materialSelect(line, refreshTotals)));
+  const matField = el("div", { class: "field" }, el("label", {}, "Material / service"), materialSelect(line, () => render()));
+  const unit = itemById(line.item_id)?.unit;
+  if (unit) matField.appendChild(el("span", { class: "unit-hint" }, "priced per " + unit));
+  wrap.appendChild(matField);
 
-  // qty
   wrap.appendChild(el("div", { class: "field" }, el("label", {}, "Qty"),
     el("input", { type: "number", step: "0.001", value: line.qty ?? 1, oninput: e => { line.qty = e.target.value; refreshTotals(); } })));
 
-  // line total + remove
   wrap.appendChild(el("div", { style: "display:flex;gap:6px;align-items:center" },
     el("span", { class: "linetotal" }, money(lineTotal(line))),
-    el("button", { class: "btn danger sm", onclick: () => { item.lines.splice(li, 1); render(); } }, "✕")));
+    el("button", { class: "btn ghost xs", title: "Duplicate line", onclick: () => { item.lines.splice(li + 1, 0, JSON.parse(JSON.stringify(line))); render(); } }, "⧉"),
+    el("button", { class: "btn danger xs", title: "Remove line", onclick: () => { item.lines.splice(li, 1); render(); } }, "✕")));
 
-  // sub-options depending on kind
   if (line.kind === "mdf") {
     const opts = el("div", { class: "sub-opts" });
-    const nf = (label, key, ph) => el("div", { class: "field" }, el("label", {}, label),
-      el("input", { type: "number", step: "0.01", value: line[key] ?? "", placeholder: ph, oninput: e => { line[key] = e.target.value; refreshTotals(); } }));
+    const nf = (label, key) => el("div", { class: "field" }, el("label", {}, label),
+      el("input", { type: "number", step: "0.01", value: line[key] ?? "", oninput: e => { line[key] = e.target.value; refreshTotals(); } }));
     opts.appendChild(nf("Length (m)", "length"));
     opts.appendChild(nf("Width (m)", "width"));
     opts.appendChild(nf("Thickness (mm)", "thickness"));
-    const fin = el("select", { onchange: e => { line.finish = e.target.value; refreshTotals(); } });
+    const fin = el("select", { onchange: e => { line.finish = e.target.value; render(); } });
     for (const o of [["none", "No finish"], ["polish", "Polish"], ["paint", "Paint"]])
       fin.appendChild(el("option", { value: o[0], selected: (line.finish || "none") === o[0] ? "selected" : null }, o[1]));
     opts.appendChild(el("div", { class: "field" }, el("label", {}, "Finish"), fin));
@@ -352,12 +426,13 @@ function renderLine(item, line, li) {
     wrap.appendChild(opts);
   } else if (line.kind === "laminated") {
     const opts = el("div", { class: "sub-opts" });
-    const proc = el("select", { onchange: e => { line.process = e.target.value; refreshTotals(); } });
+    const proc = el("select", { onchange: e => { line.process = e.target.value; render(); } });
     for (const o of [["none", "No process"], ["cnc", "CNC cutting"], ["pvc_edge", "PVC edge binding"]])
       proc.appendChild(el("option", { value: o[0], selected: (line.process || "none") === o[0] ? "selected" : null }, o[1]));
     opts.appendChild(el("div", { class: "field" }, el("label", {}, "Process"), proc));
-    opts.appendChild(el("div", { class: "field" }, el("label", {}, line.process === "pvc_edge" ? "Edge length (m)" : "Process qty"),
-      el("input", { type: "number", step: "0.01", value: line.process_qty ?? "", oninput: e => { line.process_qty = e.target.value; refreshTotals(); } })));
+    if (line.process && line.process !== "none")
+      opts.appendChild(el("div", { class: "field" }, el("label", {}, line.process === "pvc_edge" ? "Edge length (m)" : "Process qty"),
+        el("input", { type: "number", step: "0.01", value: line.process_qty ?? "", oninput: e => { line.process_qty = e.target.value; refreshTotals(); } })));
     wrap.appendChild(opts);
   }
   return wrap;
@@ -375,8 +450,16 @@ function refreshTotals() {
       if (span && item.lines[li]) span.textContent = money(lineTotal(item.lines[li]));
     });
   });
-  const pill = document.querySelector(".pill");
-  if (pill) pill.textContent = "Project total: " + money(CUR.items.reduce((s, it) => s + itemTotal(it), 0));
+  // dashboard
+  const stats = document.querySelectorAll(".dashboard .stat-val");
+  if (stats.length >= 5) {
+    const days = projectDays(CUR);
+    stats[0].textContent = money(projectTotal(CUR));
+    stats[1].textContent = String(CUR.items.length);
+    stats[2].textContent = String(days);
+    stats[3].textContent = (days / weekDays()).toFixed(1);
+    stats[4].textContent = (days / monthDays()).toFixed(1);
+  }
 }
 
 async function uploadItemImage(item, file) {
@@ -396,6 +479,7 @@ async function uploadItemImage(item, file) {
   } catch (e) { setStatus("Image upload failed: " + e.message, true); }
 }
 
+function stripUI(p) { (p.items || []).forEach(it => delete it._open); }
 async function saveProject() {
   try {
     stripUI(CUR);
@@ -403,8 +487,6 @@ async function saveProject() {
     setStatus("Project saved.");
   } catch (e) { setStatus("Save failed: " + e.message, true); }
 }
-function stripUI(p) { (p.items || []).forEach(it => delete it._open); }
-
 async function deleteProject() {
   try {
     await api("/projects/" + CUR.id, { method: "DELETE" });
@@ -412,7 +494,6 @@ async function deleteProject() {
     setStatus("Project deleted.");
   } catch (e) { setStatus("Delete failed: " + e.message, true); }
 }
-
 async function generate() {
   try {
     stripUI(CUR);

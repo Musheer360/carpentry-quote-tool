@@ -114,4 +114,35 @@ td.num, th.num { text-align: right; }
 .empty { color: var(--muted); padding: 20px; text-align: center; }
 .pill { display:inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #e7eef1; color: var(--brand); }
 .hint { font-size: 12px; color: var(--muted); margin-top: -4px; }
+.hint.warn { color: #9a6700; }
 .right { margin-left: auto; }
+
+/* dashboard */
+.dashboard {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.stat {
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: #fff; border-radius: 10px; padding: 16px; box-shadow: var(--shadow);
+}
+.stat-val { font-size: 22px; font-weight: 800; line-height: 1.1; }
+.stat-lbl { font-size: 12px; opacity: .85; margin-top: 4px; }
+
+/* small buttons */
+.btn.xs { padding: 3px 7px; font-size: 12px; font-weight: 700; border-radius: 5px; line-height: 1; }
+.item-actions { display: inline-flex; gap: 4px; margin-left: 10px; }
+
+/* calculation breakdown */
+.breakdown { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.calc-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.calc-table th { font-size: 11px; }
+.calc-table td, .calc-table th { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.calc-table tr.calc-total td { background: #f4ecd8; font-weight: 700; border-top: 2px solid var(--accent); }
+.unit-hint { font-size: 11px; color: var(--brand-2); margin-top: 2px; }
+
+/* category bars */
+.cat-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.cat-bar-label { font-size: 12px; margin-bottom: 3px; }
+.cat-bar-track { height: 10px; background: #eef2f4; border-radius: 6px; overflow: hidden; }
+.cat-bar-fill { height: 100%; background: linear-gradient(90deg, var(--brand-2), var(--accent)); border-radius: 6px; }
