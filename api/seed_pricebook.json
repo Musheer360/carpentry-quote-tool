@@ -2,6 +2,28 @@
   "currency": "SAR",
   "week_days": 6,
   "month_days": 26,
+  "estimator": {
+    "sheet_w_cm": 244,
+    "sheet_h_cm": 122,
+    "kerf_mm": 4,
+    "drawer_height_cm": 20,
+    "prices": {
+      "laminated_chipboard": 250,
+      "plain_mdf_paint": 200,
+      "veneer_polish": 600,
+      "commercial_mdf": 230,
+      "raw_mdf": 200,
+      "back_panel": 120,
+      "hinge": 5,
+      "runner_set": 40,
+      "magnet": 6,
+      "led_m": 10,
+      "edge_m": 4,
+      "paint_m2": 150,
+      "polish_m2": 150
+    },
+    "labour": { "daily_wage": 600, "daily_taxi": 60, "transport_fixed": 150 }
+  },
   "categories": [
     { "id": "boards",       "name_en": "Boards & Wood",        "name_ar": "الألواح و الأخشاب" },
     { "id": "edge_cnc",     "name_en": "Edge / CNC",           "name_ar": "تلبيس الحروف و القص" },

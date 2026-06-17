@@ -253,3 +253,14 @@ input.search { flex: 1; min-width: 220px; }
 .login-card input { width: 100%; }
 .login-err { color: var(--danger); font-size: 13px; min-height: 16px; }
 .login-card .btn { margin-top: 12px; }
+
+/* smart unit */
+.unit-form { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 6px; }
+.checkrow { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); padding: 8px 0; }
+.checkrow input { width: auto; }
+.unit-preview { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.nest-head { font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
+.nest-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.nest-cell { display: flex; flex-direction: column; gap: 4px; }
+.nest-svg { border: 1px solid var(--line-2); display: block; background: var(--bg-2); }
+.nest-cap { font-size: 11px; color: var(--muted); text-align: center; }

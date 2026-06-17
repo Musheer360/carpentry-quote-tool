@@ -35,6 +35,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
 import store
 from generator import QuoteGenerator
+from estimator import estimate as estimate_unit
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -307,6 +308,30 @@ def delete_project(pid):
         abort(404)
     store.save_doc("projects", data)
     return jsonify({"ok": True})
+
+
+# ----------------------------------------------------------------------------
+# parametric estimate (Smart Unit)
+# ----------------------------------------------------------------------------
+@app.route("/api/estimate", methods=["POST"])
+def estimate():
+    body = request.get_json(force=True, silent=True) or {}
+    unit = body.get("unit") or body
+    overrides = body.get("price_overrides") or {}
+    pb = store.load_doc("pricebook")
+    # allow per-project estimator price overrides to ride on top of pricebook
+    if overrides:
+        pb = dict(pb)
+        est = dict(pb.get("estimator") or {})
+        est_prices = dict(est.get("prices") or {})
+        est_prices.update({k: v for k, v in overrides.items() if v not in (None, "")})
+        est["prices"] = est_prices
+        pb["estimator"] = est
+    try:
+        return jsonify(estimate_unit(unit, pb))
+    except Exception as exc:
+        app.logger.exception("estimate failed")
+        abort(400, "estimate failed: %s" % exc)
 
 
 # ----------------------------------------------------------------------------

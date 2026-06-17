@@ -170,6 +170,10 @@ function lineComponents(line) {
 function lineTotal(line) { return lineComponents(line).reduce((s, c) => s + c.amount, 0); }
 
 function itemComponents(item) {
+  if (item.kind === "unit") {
+    const bom = item._estimate && item._estimate.bom ? item._estimate.bom : [];
+    return bom.map(b => ({ label: b.label_en, name_ar: b.label_ar, qty: b.qty, price: b.price, amount: b.amount, cat: b.cat }));
+  }
   const comps = [];
   (item.lines || []).forEach(l => comps.push(...lineComponents(l)));
   const days = num(item.labour_days);
@@ -181,9 +185,13 @@ function itemComponents(item) {
   if (trips > 0) comps.push({ label: "Material transport", name_ar: itemById("transport_mat")?.name_ar || "", qty: trips, price: priceOf("transport_mat"), amount: trips * priceOf("transport_mat"), cat: "transport" });
   return comps;
 }
-function itemTotal(item) { return itemComponents(item).reduce((s, c) => s + c.amount, 0); }
+function itemTotal(item) {
+  if (item.kind === "unit") return item._estimate ? num(item._estimate.costs.grand) : 0;
+  return itemComponents(item).reduce((s, c) => s + c.amount, 0);
+}
+function itemDays(item) { return item.kind === "unit" ? num((item.unit || {}).labour_days) : num(item.labour_days); }
 function projectTotal(p) { return (p.items || []).reduce((s, it) => s + itemTotal(it), 0); }
-function projectDays(p) { return (p.items || []).reduce((s, it) => s + num(it.labour_days), 0); }
+function projectDays(p) { return (p.items || []).reduce((s, it) => s + itemDays(it), 0); }
 function categoryTotals(comps) {
   const map = {};
   comps.forEach(c => { if (c.cat) map[c.cat] = (map[c.cat] || 0) + c.amount; });
@@ -366,7 +374,8 @@ function renderEditor(root) {
     el("span", { class: "spacer" }),
     el("button", { class: "btn ghost sm", onclick: () => { p.items.forEach(i => i._open = false); render(); } }, "Collapse all"),
     el("button", { class: "btn ghost sm", onclick: () => { p.items.forEach(i => i._open = true); render(); } }, "Expand all"),
-    el("button", { class: "btn ghost sm", onclick: addItem }, "+ Add item")));
+    el("button", { class: "btn ghost sm", onclick: addItem }, "+ Add item"),
+    el("button", { class: "btn primary sm", onclick: addUnitItem }, "+ Smart Unit")));
 
   if (!p.items.length) root.appendChild(el("div", { class: "empty" }, "No items yet. Add the first piece (TV wall, wardrobe, ...)."));
   p.items.forEach((item, idx) => root.appendChild(renderItem(item, idx)));
@@ -407,10 +416,15 @@ function projectIssues(p) {
   if (!p.items.length) out.push("No items added yet.");
   p.items.forEach((it, i) => {
     const label = it.name_en || it.name_ar || `Item ${i + 1}`;
+    if (it.kind === "unit") {
+      const u = it.unit || {};
+      if (!(num(u.height_cm) > 0 && num(u.width_cm) > 0 && num(u.depth_cm) > 0))
+        out.push(`“${label}” is missing height/width/depth.`);
+      return;
+    }
     const lines = it.lines || [];
     if (!lines.length && !num(it.labour_days) && !num(it.material_transport_trips)) out.push(`“${label}” has no materials or labour.`);
     lines.forEach((l, li) => { if (!l.item_id) out.push(`“${label}” line ${li + 1} has no material selected.`); });
-    if (it.kind === undefined) {}
   });
   return out;
 }
@@ -442,8 +456,35 @@ function renderOverrides(p) {
 }
 
 function addItem() {
-  CUR.items.push({ name_en: "New item", name_ar: "", place_ar: "", time: "", note_ar: "", image: "", labour_days: 0, material_transport_trips: 0, lines: [], _open: true });
+  CUR.items.push({ kind: "manual", name_en: "New item", name_ar: "", place_ar: "", time: "", note_ar: "", image: "", labour_days: 0, material_transport_trips: 0, lines: [], _open: true });
   touch(); render();
+}
+const DEFAULT_UNIT = {
+  unit_type: "wardrobe", height_cm: 240, width_cm: 180, depth_cm: 60,
+  finish: "laminated_chipboard", main_doors: 3, loft_doors: 0, drawers: 0,
+  shelves: 4, partitions: 0, drawer_width_cm: 60, push_to_open: false,
+  led_shelf_count: 0, led_shelf_depth: 20, add_hinges_manual: false, manual_hinges: 0,
+  finishing: "none", labour_days: 3, daily_wage: 600, daily_taxi: 60, transport_fixed: 150,
+};
+function addUnitItem() {
+  CUR.items.push({ kind: "unit", name_en: "Smart Unit", name_ar: "", place_ar: "", time: "", note_ar: "", image: "",
+    unit: JSON.parse(JSON.stringify(DEFAULT_UNIT)), _estimate: null, _open: true });
+  touch(); render();
+}
+const _estTimers = {};
+async function runEstimate(item, key) {
+  try {
+    const r = await fetch(API + "/estimate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unit: item.unit }) });
+    if (!r.ok) throw new Error("estimate failed");
+    item._estimate = await r.json();
+    const box = document.getElementById("est-" + key);
+    if (box) { box.innerHTML = ""; box.appendChild(renderUnitPreview(item)); }
+    refreshTotals();
+  } catch (e) { /* leave previous estimate */ }
+}
+function scheduleEstimate(item, key) {
+  clearTimeout(_estTimers[key]);
+  _estTimers[key] = setTimeout(() => runEstimate(item, key), 350);
 }
 function duplicateItem(idx) {
   const copy = JSON.parse(JSON.stringify(CUR.items[idx]));
@@ -458,10 +499,15 @@ function moveItem(idx, dir) {
 }
 
 function renderItem(item, idx) {
+  if (item.kind === undefined) item.kind = "manual";
   const block = el("div", { class: "item-block" + (item._open ? " open" : "") });
-  const chips = el("span", { class: "chips" },
-    el("span", { class: "chip" }, `${(item.lines || []).length} mat.`),
-    el("span", { class: "chip" }, `${round3(num(item.labour_days))} d`));
+  const chips = item.kind === "unit"
+    ? el("span", { class: "chips" },
+        el("span", { class: "chip" }, ({wardrobe:"Wardrobe",tv_wall:"TV Wall",wall_paneling:"Wall Paneling"})[item.unit.unit_type] || "Unit"),
+        el("span", { class: "chip" }, `${num(item.unit.width_cm)}×${num(item.unit.height_cm)}×${num(item.unit.depth_cm)}`))
+    : el("span", { class: "chips" },
+        el("span", { class: "chip" }, `${(item.lines || []).length} mat.`),
+        el("span", { class: "chip" }, `${round3(itemDays(item))} d`));
   const head = el("div", { class: "item-head", onclick: () => { item._open = !item._open; render(); } },
     el("span", { class: "chev" }),
     el("span", { class: "name" }, (item.name_en || "Item")),
@@ -487,9 +533,8 @@ function renderItem(item, idx) {
   body.appendChild(el("div", { class: "row" }, fi("Location / place (AR)", "place_ar", true), el("div", { class: "field" }, el("label", {}, "Time"), timeI)));
   body.appendChild(el("div", { class: "row" }, fi("Note (AR, optional)", "note_ar", true)));
 
-  // image
   const imgField = el("div", { class: "field" });
-  imgField.appendChild(el("label", {}, "Item photo"));
+  imgField.appendChild(el("label", {}, item.kind === "unit" ? "Blueprint / item photo" : "Item photo"));
   const imgRow = el("div", { class: "row", style: "align-items:center" });
   if (item.image) imgRow.appendChild(el("img", { class: "thumb", src: item.image.startsWith("http") ? item.image : "/" + item.image }));
   imgRow.appendChild(el("input", { type: "file", accept: "image/*", onchange: e => uploadItemImage(item, e.target.files[0]) }));
@@ -497,24 +542,133 @@ function renderItem(item, idx) {
   imgField.appendChild(imgRow);
   body.appendChild(imgField);
 
-  const daysI = el("input", { type: "number", step: "0.5", min: "0", value: item.labour_days || 0 });
-  daysI.addEventListener("input", e => { item.labour_days = e.target.value; refreshTotals(); touch(); });
-  const tripsI = el("input", { type: "number", step: "1", min: "0", value: item.material_transport_trips || 0 });
-  tripsI.addEventListener("input", e => { item.material_transport_trips = e.target.value; refreshTotals(); touch(); });
-  body.appendChild(el("div", { class: "row" },
-    el("div", { class: "field" }, el("label", {}, "Labour work days"), daysI),
-    el("div", { class: "field" }, el("label", {}, "Material transport trips"), tripsI)));
-  body.appendChild(el("p", { class: "hint" }, "Labour transport (limousine) is auto-calculated as work days × 2."));
-
-  body.appendChild(el("h3", {}, "Materials & services"));
-  item.lines = item.lines || [];
-  if (!item.lines.length) body.appendChild(el("p", { class: "hint warn" }, "No materials yet — add at least one line."));
-  item.lines.forEach((line, li) => body.appendChild(renderLine(item, line, li)));
-  body.appendChild(el("button", { class: "btn ghost sm", onclick: () => { item.lines.push({ kind: "simple", item_id: "", qty: 1 }); touch(); render(); } }, "+ Add material line"));
-
-  body.appendChild(renderItemBreakdown(item));
+  if (item.kind === "unit") {
+    body.appendChild(renderUnitForm(item, idx));
+    const est = el("div", { id: "est-" + idx, class: "unit-preview" });
+    est.appendChild(renderUnitPreview(item));
+    body.appendChild(est);
+    if (!item._estimate) scheduleEstimate(item, idx);
+  } else {
+    const daysI = el("input", { type: "number", step: "0.5", min: "0", value: item.labour_days || 0 });
+    daysI.addEventListener("input", e => { item.labour_days = e.target.value; refreshTotals(); touch(); });
+    const tripsI = el("input", { type: "number", step: "1", min: "0", value: item.material_transport_trips || 0 });
+    tripsI.addEventListener("input", e => { item.material_transport_trips = e.target.value; refreshTotals(); touch(); });
+    body.appendChild(el("div", { class: "row" },
+      el("div", { class: "field" }, el("label", {}, "Labour work days"), daysI),
+      el("div", { class: "field" }, el("label", {}, "Material transport trips"), tripsI)));
+    body.appendChild(el("p", { class: "hint" }, "Labour transport (limousine) is auto-calculated as work days × 2."));
+    body.appendChild(el("h3", {}, "Materials & services"));
+    item.lines = item.lines || [];
+    if (!item.lines.length) body.appendChild(el("p", { class: "hint warn" }, "No materials yet — add at least one line."));
+    item.lines.forEach((line, li) => body.appendChild(renderLine(item, line, li)));
+    body.appendChild(el("button", { class: "btn ghost sm", onclick: () => { item.lines.push({ kind: "simple", item_id: "", qty: 1 }); touch(); render(); } }, "+ Add material line"));
+    body.appendChild(renderItemBreakdown(item));
+  }
   block.appendChild(body);
   return block;
+}
+
+/* ---- Smart Unit parametric form ---- */
+function renderUnitForm(item, idx) {
+  const u = item.unit;
+  const wrap = el("div", { class: "unit-form" });
+  const reEst = () => { touch(); scheduleEstimate(item, idx); };
+  const sel = (label, key, opts, onchange) => {
+    const s = el("select");
+    opts.forEach(o => s.appendChild(el("option", { value: o[0], selected: u[key] === o[0] }, o[1])));
+    s.addEventListener("change", e => { u[key] = e.target.value; onchange ? onchange() : reEst(); });
+    return el("div", { class: "field" }, el("label", {}, label), s);
+  };
+  const nf = (label, key, step = "1") => {
+    const i = el("input", { type: "number", step, value: u[key] ?? 0 });
+    i.addEventListener("input", e => { u[key] = e.target.value; reEst(); });
+    return el("div", { class: "field" }, el("label", {}, label), i);
+  };
+  const cb = (label, key, onchange) => {
+    const i = el("input", { type: "checkbox" });
+    i.checked = !!u[key];
+    i.addEventListener("change", e => { u[key] = e.target.checked; onchange ? onchange() : reEst(); });
+    return el("label", { class: "checkrow" }, i, " " + label);
+  };
+
+  wrap.appendChild(el("h3", {}, "Unit specification"));
+  wrap.appendChild(el("div", { class: "row" },
+    sel("Unit type", "unit_type", [["wardrobe", "Wardrobe"], ["tv_wall", "TV Wall"], ["wall_paneling", "Wall Paneling"]], () => render()),
+    sel("Material / finish", "finish", [["laminated_chipboard", "Laminated Chipboard"], ["plain_mdf_paint", "Plain MDF (paint)"], ["veneer_polish", "MDF + Veneer (polish)"], ["commercial_mdf", "Commercial MDF"]])));
+  wrap.appendChild(el("div", { class: "row" }, nf("Height (cm)", "height_cm"), nf("Width (cm)", "width_cm"), nf("Depth (cm)", "depth_cm")));
+
+  if (u.unit_type === "wardrobe") {
+    wrap.appendChild(el("div", { class: "row" }, nf("Main shutters", "main_doors"), nf("Loft shutters", "loft_doors"), nf("Shelves", "shelves"), nf("Partitions", "partitions")));
+    wrap.appendChild(el("p", { class: "hint" }, "Auto hinges: 3 per main shutter (≤240cm), 2 per loft shutter. Back panel forced to 8mm."));
+  } else {
+    wrap.appendChild(el("div", { class: "row" }, nf("Shelves / racks", "shelves")));
+    wrap.appendChild(el("div", { class: "row" },
+      el("div", { class: "field" }, el("label", {}, "Hinges"), cb("Add shutters/hinges manually", "add_hinges_manual", () => render())),
+      u.add_hinges_manual ? nf("Manual hinges (count)", "manual_hinges") : el("div", { class: "field" }, el("label", {}, " "), el("span", { class: "hint" }, "Hinges = 0 (no shutters).")),
+      u.add_hinges_manual ? nf("Shutters", "main_doors") : null));
+    wrap.appendChild(el("p", { class: "hint" }, "Automated 18mm raw-MDF backing grid (7cm strips ≤50cm apart) is added automatically."));
+  }
+  wrap.appendChild(el("div", { class: "row" }, nf("Drawers", "drawers"), nf("Drawer width (cm)", "drawer_width_cm")));
+  wrap.appendChild(el("div", { class: "row" },
+    nf("LED shelves (count)", "led_shelf_count"),
+    sel("LED shelf depth", "led_shelf_depth", [["20", "20 cm"], ["40", "40 cm"]]),
+    el("div", { class: "field" }, el("label", {}, "Options"), cb("Push-to-open (magnets)", "push_to_open"))));
+  wrap.appendChild(sel("Finishing", "finishing", [["none", "None"], ["paint", "Paint"], ["polish", "Polish"]]));
+  wrap.appendChild(el("h3", {}, "Labour & logistics"));
+  wrap.appendChild(el("div", { class: "row" }, nf("Work days", "labour_days", "0.5"), nf("Daily wage (SAR)", "daily_wage"), nf("Daily taxi (SAR)", "daily_taxi"), nf("Transport fixed (SAR)", "transport_fixed")));
+  return wrap;
+}
+
+/* ---- Smart Unit live preview (BOM + nesting + costs) ---- */
+function renderUnitPreview(item) {
+  const wrap = el("div", {});
+  const est = item._estimate;
+  if (!est) { wrap.appendChild(el("p", { class: "hint" }, "Calculating…")); return wrap; }
+  const c = est.costs;
+  wrap.appendChild(el("h3", {}, "Estimated cost"));
+  const card = (v, l) => el("div", { class: "stat" }, el("div", { class: "stat-val" }, money(v)), el("div", { class: "stat-lbl" }, l));
+  wrap.appendChild(el("div", { class: "dashboard" },
+    card(c.materials, "Materials"), card(c.hardware, "Hardware"), card(c.finishing, "Finishing"), card(c.logistics, "Labour & logistics"), card(c.grand, "Grand total")));
+
+  wrap.appendChild(el("h3", {}, "Bill of Materials"));
+  const tbl = el("table", { class: "calc-table" });
+  tbl.appendChild(el("tr", {}, el("th", {}, "Item"), el("th", { class: "num" }, "Qty"), el("th", {}, "Unit"), el("th", { class: "num" }, "Price"), el("th", { class: "num" }, "Amount")));
+  est.bom.forEach(b => tbl.appendChild(el("tr", {},
+    el("td", {}, b.label_en, " ", el("span", { class: "arabic muted" }, b.label_ar)),
+    el("td", { class: "num" }, String(round3(b.qty))), el("td", {}, b.unit),
+    el("td", { class: "num" }, money(b.price)), el("td", { class: "num" }, el("strong", {}, money(b.amount))))));
+  tbl.appendChild(el("tr", { class: "calc-total" }, el("td", { colspan: "4" }, "Grand total"), el("td", { class: "num" }, money(c.grand))));
+  wrap.appendChild(tbl);
+
+  wrap.appendChild(el("h3", {}, "Nesting layout"));
+  const cfg = est.config;
+  Object.keys(est.nesting).forEach(mat => {
+    const nz = est.nesting[mat];
+    wrap.appendChild(el("div", { class: "nest-head" }, `${nz.material_en} — ${nz.sheet_count} sheet(s) @ ${(nz.utilization * 100).toFixed(0)}% used (sheet ${nz.sheet_w}×${nz.sheet_h}cm)`));
+    const grid = el("div", { class: "nest-grid" });
+    nz.layouts.slice(0, 12).forEach((lay, i) => grid.appendChild(nestingSvg(lay, nz.sheet_w, nz.sheet_h, i + 1)));
+    wrap.appendChild(grid);
+  });
+  return wrap;
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function nestingSvg(layout, sw, sh, index) {
+  const W = 220, scale = W / sw, H = sh * scale;
+  const svg = svgEl("svg", { width: W, height: H, class: "nest-svg", viewBox: `0 0 ${W} ${H}` });
+  svg.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "var(--bg-2)", stroke: "var(--line-2)" }));
+  (layout.placements || []).forEach(p => {
+    const r = svgEl("rect", { x: p.x * scale, y: p.y * scale, width: Math.max(p.w * scale - 1, 1), height: Math.max(p.h * scale - 1, 1),
+      fill: "var(--bar)", "fill-opacity": "0.14", stroke: "var(--bar)", "stroke-width": "0.5" });
+    svg.appendChild(r);
+  });
+  const cap = el("div", { class: "nest-cap" }, `Sheet ${index} · ${((layout.utilization || 0) * 100).toFixed(0)}%`);
+  return el("div", { class: "nest-cell" }, svg, cap);
 }
 
 function renderItemBreakdown(item) {
@@ -681,7 +835,7 @@ function renderPreview(p) {
   const stbl = el("table", { class: "pv-table arabic" });
   stbl.appendChild(el("tr", {}, el("th", {}, "أيام العمل"), el("th", {}, "إجمالي التكلفة"), el("th", {}, "البند"), el("th", {}, "#")));
   p.items.forEach((it, i) => stbl.appendChild(el("tr", {},
-    el("td", {}, String(round3(num(it.labour_days)))), el("td", {}, money(itemTotal(it))), el("td", {}, it.name_ar || it.name_en || "بند"), el("td", {}, String(i + 1)))));
+    el("td", {}, String(round3(itemDays(it)))), el("td", {}, money(itemTotal(it))), el("td", {}, it.name_ar || it.name_en || "بند"), el("td", {}, String(i + 1)))));
   stbl.appendChild(el("tr", { class: "pv-total-row" }, el("td", {}, String(round3(days))), el("td", {}, money(projectTotal(p))), el("td", { colspan: "2" }, "الإجمالي الكلي للمشروع")));
   sum.appendChild(stbl);
   wrap.appendChild(sum);
@@ -741,7 +895,7 @@ async function uploadItemImage(item, file) {
   } catch (e) { toast("Image upload failed: " + e.message, "err"); }
 }
 
-function stripUI(p) { (p.items || []).forEach(it => delete it._open); }
+function stripUI(p) { (p.items || []).forEach(it => { delete it._open; delete it._estimate; }); }
 async function saveProject() {
   try {
     clearTimeout(saveTimer);

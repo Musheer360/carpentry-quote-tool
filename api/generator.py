@@ -28,6 +28,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 
+from estimator import estimate as estimate_unit
+
 # ---------------------------------------------------------------- styling ---
 SAR_FMT = '#,##0.00\\ "ر.س"'
 QTY_FMT = '#,##0.###'
@@ -122,7 +124,10 @@ class QuoteGenerator:
             title = _safe_sheet_title(item.get("name_ar") or item.get("name_en"), used_titles)
             ws = wb.create_sheet(title=title)
             ws.sheet_properties.tabColor = C_TABCLR
-            total_cell, days_cell = self._build_item_sheet(ws, project, item, price_ref, data_dir)
+            if item.get("kind") == "unit":
+                total_cell, days_cell = self._build_unit_sheet(ws, project, item)
+            else:
+                total_cell, days_cell = self._build_item_sheet(ws, project, item, price_ref, data_dir)
             item_sheets.append((title, total_cell, days_cell))
 
         self._build_summary_sheet(wb, project, item_sheets)
@@ -135,6 +140,8 @@ class QuoteGenerator:
     # -- id discovery --------------------------------------------------------
     def _ids_in_item(self, item):
         ids = []
+        if item.get("kind") == "unit":
+            return ids
         for ln in item.get("lines", []) or []:
             if ln.get("item_id"):
                 ids.append(ln["item_id"])
@@ -560,6 +567,142 @@ class QuoteGenerator:
             for col in (COL_TOTAL, COL_NAME):
                 ws.cell(row=rr, column=col).border = BORDER
         return days_cell
+
+    # -- Smart Unit sheet ----------------------------------------------------
+    def _build_unit_sheet(self, ws, project, item):
+        ws.sheet_view.rightToLeft = True
+        ws.sheet_view.showGridLines = False
+        for col, w in {"A": 2, "B": 13, "C": 13, "D": 13, "E": 13, "F": 4, "G": 4,
+                       "H": 4, "I": 4, "J": 18, "K": 14, "L": 11, "M": 40}.items():
+            ws.column_dimensions[col].width = w
+
+        est = estimate_unit(item.get("unit", {}), self.pb)
+        u = item.get("unit", {})
+
+        # banner
+        ws.merge_cells("B1:M1")
+        ban = ws["B1"]
+        ban.value = project.get("company_name_ar") or project.get("company_name_en") or "عرض سعر"
+        ban.font = F_BANNER; ban.alignment = CENTER
+        ban.fill = PatternFill("solid", fgColor=C_BRAND)
+        ws.row_dimensions[1].height = 30
+        ws.merge_cells("B2:M2")
+        sub = ws["B2"]
+        type_ar = {"wardrobe": "خزانة", "tv_wall": "جدار تلفاز", "wall_paneling": "تلبيس جدار"}.get(u.get("unit_type"), "وحدة")
+        sub.value = "وحدة ذكية - %s" % type_ar
+        sub.font = F_SUBBAN; sub.alignment = CENTER
+        sub.fill = PatternFill("solid", fgColor=C_BRAND2)
+
+        meta = [
+            ("اسم العميل", project.get("client_name_ar") or project.get("client_name_en") or ""),
+            ("البند", item.get("name_ar") or item.get("name_en") or ""),
+            ("المقاسات (سم) ع×ط×ع", "%s × %s × %s" % (u.get("width_cm"), u.get("height_cm"), u.get("depth_cm"))),
+            ("المكان", item.get("place_ar") or ""),
+        ]
+        row = 3
+        for label, value in meta:
+            lc = ws.cell(row=row, column=COL_NAME, value=label)
+            lc.font = F_LABEL; lc.alignment = RIGHT
+            lc.fill = PatternFill("solid", fgColor=C_META); lc.border = BORDER
+            ws.merge_cells(start_row=row, start_column=COL_TOTAL, end_row=row, end_column=COL_QTY)
+            vc = ws.cell(row=row, column=COL_TOTAL, value=value)
+            vc.font = F_CELL; vc.alignment = RIGHT; vc.border = BORDER
+            row += 1
+        ws.cell(row=row, column=COL_NAME, value="التاريخ").font = F_LABEL
+        ws.cell(row=row, column=COL_NAME).alignment = RIGHT
+        ws.cell(row=row, column=COL_NAME).fill = PatternFill("solid", fgColor=C_META)
+        ws.cell(row=row, column=COL_NAME).border = BORDER
+        ws.merge_cells(start_row=row, start_column=COL_TOTAL, end_row=row, end_column=COL_QTY)
+        dc = ws.cell(row=row, column=COL_TOTAL, value="=TODAY()")
+        dc.number_format = "yyyy-mm-dd"; dc.alignment = RIGHT; dc.border = BORDER
+        row += 2
+
+        # BOM table (formula-driven totals)
+        self._section(ws, row, "قائمة المواد (BOM)")
+        row += 1
+        for col, text in {COL_TOTAL: "قيمة الإجمالي", COL_PRICE: "السعر", COL_QTY: "العدد", COL_NAME: "البند"}.items():
+            c = ws.cell(row=row, column=col, value=text)
+            c.font = F_HEAD; c.alignment = CENTER
+            c.fill = PatternFill("solid", fgColor=C_BRAND2); c.border = BORDER
+        ws.column_dimensions[get_column_letter(COL_CAT)].hidden = True
+        first = row + 1
+        r = first
+        for b in est["bom"]:
+            ws.cell(row=r, column=COL_NAME, value=b["label_ar"] or b["label_en"]).alignment = RIGHT
+            ws.cell(row=r, column=COL_NAME).font = F_CELL
+            qc = ws.cell(row=r, column=COL_QTY, value=b["qty"]); qc.number_format = QTY_FMT; qc.alignment = CENTER; qc.font = F_CELL
+            kc = ws.cell(row=r, column=COL_PRICE, value=b["price"]); kc.number_format = SAR_FMT; kc.alignment = CENTER; kc.font = F_CELL
+            jc = ws.cell(row=r, column=COL_TOTAL, value=f"=L{r}*K{r}"); jc.number_format = SAR_FMT; jc.alignment = CENTER; jc.font = F_CELL
+            ws.cell(row=r, column=COL_CAT, value=b["cat"])
+            for col in range(COL_TOTAL, COL_NAME + 1):
+                ws.cell(row=r, column=col).border = BORDER
+                if (r - first) % 2 == 1:
+                    ws.cell(row=r, column=col).fill = PatternFill("solid", fgColor=C_ZEBRA)
+            r += 1
+        last = r - 1
+        total_row = r
+        tc = ws.cell(row=total_row, column=COL_TOTAL, value=f"=SUM(J{first}:J{last})")
+        tc.font = F_TOTAL; tc.number_format = SAR_FMT; tc.alignment = CENTER
+        tc.fill = PatternFill("solid", fgColor=C_TOTAL); tc.border = BORDER_TOTAL
+        lbl = ws.cell(row=total_row, column=COL_NAME, value="الإجمالي الكلي للوحدة")
+        lbl.font = F_TOTAL; lbl.alignment = RIGHT
+        lbl.fill = PatternFill("solid", fgColor=C_TOTAL); lbl.border = BORDER_TOTAL
+        for col in (COL_PRICE, COL_QTY):
+            ws.cell(row=total_row, column=col).fill = PatternFill("solid", fgColor=C_TOTAL)
+            ws.cell(row=total_row, column=col).border = BORDER_TOTAL
+        total_cell = f"'{ws.title}'!$J${total_row}"
+
+        # cost breakdown by category (SUMIF)
+        r = total_row + 2
+        self._section(ws, r, "تفصيل التكلفة حسب التصنيف")
+        r += 1
+        cats = [c for c in self.pb.get("categories", [])]
+        present = set(b["cat"] for b in est["bom"])
+        for cat in cats:
+            if cat["id"] not in present:
+                continue
+            lc = ws.cell(row=r, column=COL_NAME, value=cat["name_ar"]); lc.font = F_CELL; lc.alignment = RIGHT
+            ws.merge_cells(start_row=r, start_column=COL_PRICE, end_row=r, end_column=COL_QTY)
+            vc = ws.cell(row=r, column=COL_PRICE,
+                         value=f'=SUMIF($O${first}:$O${last},"{cat["id"]}",$J${first}:$J${last})')
+            vc.number_format = SAR_FMT; vc.alignment = CENTER; vc.font = F_CELL
+            pc = ws.cell(row=r, column=COL_TOTAL, value=f"=IF($J${total_row}=0,0,K{r}/$J${total_row})")
+            pc.number_format = PCT_FMT; pc.alignment = CENTER; pc.font = F_CELL
+            for col in (COL_TOTAL, COL_PRICE, COL_QTY, COL_NAME):
+                ws.cell(row=r, column=col).border = BORDER
+            r += 1
+
+        # nesting summary
+        r += 1
+        self._section(ws, r, "ملخص التعشيش (الألواح)")
+        r += 1
+        for col, text in {COL_TOTAL: "نسبة الاستغلال", COL_PRICE: "عدد الألواح", COL_NAME: "المادة"}.items():
+            c = ws.cell(row=r, column=col, value=text); c.font = F_HEAD; c.alignment = CENTER
+            c.fill = PatternFill("solid", fgColor=C_BRAND2); c.border = BORDER
+        ws.merge_cells(start_row=r, start_column=COL_PRICE, end_row=r, end_column=COL_QTY)
+        r += 1
+        for mat, nz in est["nesting"].items():
+            ws.cell(row=r, column=COL_NAME, value=nz["material_ar"]).alignment = RIGHT
+            ws.cell(row=r, column=COL_NAME).font = F_CELL
+            ws.merge_cells(start_row=r, start_column=COL_PRICE, end_row=r, end_column=COL_QTY)
+            sc = ws.cell(row=r, column=COL_PRICE, value=nz["sheet_count"]); sc.alignment = CENTER; sc.font = F_CELL
+            uc = ws.cell(row=r, column=COL_TOTAL, value=nz["utilization"]); uc.number_format = PCT_FMT; uc.alignment = CENTER; uc.font = F_CELL
+            for col in (COL_TOTAL, COL_PRICE, COL_QTY, COL_NAME):
+                ws.cell(row=r, column=col).border = BORDER
+            r += 1
+
+        # time estimate
+        days = float(u.get("labour_days") or 0)
+        r += 1
+        days_cell = self._write_time(ws, r, {"labour_days": days})
+
+        ws.freeze_panes = f"A{first}"
+        ws.print_options.horizontalCentered = True
+        ws.page_setup.orientation = "portrait"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        return total_cell, days_cell
 
     # -- summary -------------------------------------------------------------
     def _build_summary_sheet(self, wb, project, item_sheets):
